@@ -16,6 +16,7 @@ the CLI for automation, CI pipelines and continuous monitoring.
 [![CI](https://github.com/voidsecurity404/osint-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/voidsecurity404/osint-forge/actions/workflows/ci.yml)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-444)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > ⚠️ **Authorization is required.** Active scanning (nmap, HTTP probing,
 > fuzzing, zone transfer, nuclei, screenshots) only runs when you explicitly
@@ -391,8 +392,7 @@ osint-forge/
 
 ## License & disclaimer
 
-> No license file is included yet. Until one is added, all rights are reserved;
-> add a `LICENSE` file to set explicit terms for use and contribution.
+Released under the [MIT License](LICENSE).
 
 **Disclaimer.** osint-forge is intended for authorized security assessment,
 research and education. Scanning or probing systems you do not own or have
