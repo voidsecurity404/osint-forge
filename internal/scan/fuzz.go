@@ -51,7 +51,7 @@ func (s FuzzSource) Run(ctx context.Context, c *core.Collector) error {
 	if len(words) == 0 {
 		return nil
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("fuzzing %d host(s) × %d paths (%s)", len(bases), len(words), label))
+	c.Log(core.LogInfo, fmt.Sprintf("фаззинг: хостов %d × путей %d (%s)", len(bases), len(words), label))
 	// Hosts are fuzzed a few at a time. The per-host rate limit still applies to
 	// each host; one-by-one took ~2 min per host and blew the scan budget on
 	// targets with many web hosts.
@@ -177,7 +177,7 @@ func (s FuzzSource) fuzzBase(ctx context.Context, c *core.Collector, base string
 		threshold = 120
 	}
 	if len(hits) > threshold {
-		c.Log(core.LogWarn, fmt.Sprintf("%s → %d hits looks like a wildcard/soft-404 host; suppressed", base, len(hits)))
+		c.Log(core.LogWarn, fmt.Sprintf("%s → %d совпадений: похоже на wildcard/soft-404 хост, результаты скрыты", base, len(hits)))
 		return
 	}
 
@@ -192,7 +192,7 @@ func (s FuzzSource) fuzzBase(ctx context.Context, c *core.Collector, base string
 		id := c.Node(graph.NodeURL, h.url, "/"+h.word, props)
 		c.Edge(baseID, id, "path")
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("%s → %d paths", base, len(hits)))
+	c.Log(core.LogInfo, fmt.Sprintf("%s → путей: %d", base, len(hits)))
 }
 
 func tolerance(softLen int) float64 {

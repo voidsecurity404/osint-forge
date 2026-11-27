@@ -1,466 +1,485 @@
 # 🕸️ osint-forge
 
-**osint-forge** — bitta nishon (domen yoki IP) atrofidagi butun internetga ochiq
-tasvirni bir joyga yig'adigan, uni **jonli grafda** ko'rsatadigan va xavfsizlik
-nuqtai nazaridan tahlil qiladigan razvedka (OSINT + recon) vositasi.
+**osint-forge** — инструмент разведки (OSINT + recon), который собирает в одном
+месте всю видимую из интернета картину вокруг одной цели (домена или IP),
+показывает её в виде **живого графа** и анализирует с точки зрения
+безопасности.
 
-Siz bitta domen yoki IP kiritasiz — dastur o'nlab manbalardan subdomenlar,
-IP'lar, portlar, servislar, sertifikatlar, texnologiyalar, URL'lar, email'lar,
-ma'lum zaifliklar (CVE) va xavfsizlik topilmalarini yig'ib, ularni **Obsidian
-uslubidagi grafga** chizadi. Topilgan har bir narsa qayerdan kelib chiqqani
-bilan bog'langan bo'ladi, shuning uchun siz butun tasvirni bir qarashda
-ko'rasiz.
+Вы вводите один домен или IP — программа собирает из десятков источников
+поддомены, IP-адреса, порты, сервисы, сертификаты, технологии, URL, email-адреса,
+известные уязвимости (CVE) и находки безопасности и рисует их в виде **графа в
+стиле Obsidian**. Каждый найденный объект связан с тем, откуда он появился,
+поэтому вся картина видна с одного взгляда.
 
-Dastur **bitta Go dasturidan** iborat: ishga tushirsangiz, u ichida veb-server
-ko'taradi va butun interfeys brauzerda `http://localhost:8081` da ochiladi.
-Hech qanday tashqi dasturni o'rnatish shart emas — shablonli tekshiruvlar
-dastur ichida, skrinshotlar tizimdagi brauzer bilan, qolgan hamma narsa sof
-Go'da ishlaydi.
+Программа — это **один исполняемый файл на Go**: при запуске он поднимает
+встроенный веб-сервер, а весь интерфейс открывается в браузере по адресу
+`http://localhost:8081`. Устанавливать внешние программы не обязательно:
+проверки по шаблонам встроены в программу, скриншоты делаются установленным в
+системе браузером, всё остальное работает на чистом Go.
+
+Интерфейс, сообщения журнала, находки, отчёты, уведомления и CLI — **на русском
+языке**.
 
 ```
-   domen / IP   ──▶   10+ manba   ──▶   jonli graf   ──▶   tahlil + hisobot
-   example.com         DNS, crt.sh,      tugunlar va        teglar, CVE,
-                       nmap, wayback…     bog'lanishlar      eksport, diff
+   домен / IP   ──▶   10+ источников   ──▶   живой граф   ──▶   анализ + отчёт
+   example.com         DNS, crt.sh,           узлы и            теги, CVE,
+                       nmap, wayback…         связи             экспорт, diff
 ```
 
-> ⚠️ **Ogohlantirish:** aktiv skan (port-skan, HTTP so'rovlari, fuzzing)
-> faqat **o'zingizga tegishli yoki yozma ruxsat berilgan** nishonlarga
-> qaratilishi kerak. Ruxsatsiz skanlash ko'p mamlakatda qonunga ziddir.
-> Passiv manbalar nishonga hech qanday paket yubormaydi.
+> ⚠️ **Предупреждение:** активное сканирование (сканирование портов,
+> HTTP-запросы, фаззинг) допустимо только для целей, которые **принадлежат вам
+> или на которые есть письменное разрешение**. Сканирование без разрешения во
+> многих странах незаконно. Пассивные источники не отправляют цели ни одного
+> пакета.
 
 ---
 
-## Mundarija
+## Содержание
 
-- [Nega osint-forge](#nega-osint-forge)
-- [Tez boshlash](#tez-boshlash)
-- [Qanday ishlaydi](#qanday-ishlaydi)
-- [Skan bosqichlari](#skan-bosqichlari)
-- [Ma'lumot manbalari](#malumot-manbalari)
-- [Graf: tugun turlari](#graf-tugun-turlari)
-- [Dastur ichidagi imkoniyatlar](#dastur-ichidagi-imkoniyatlar)
-- [Veb-interfeys](#veb-interfeys)
-- [CVE dvigateli](#cve-dvigateli)
-- [Hisobotlar va eksport](#hisobotlar-va-eksport)
-- [Uzluksiz monitoring](#uzluksiz-monitoring)
-- [Xavfsizlik modeli](#xavfsizlik-modeli)
-- [Sozlamalar va API kalitlar](#sozlamalar-va-api-kalitlar)
-- [Ma'lumotlar qayerda saqlanadi](#malumotlar-qayerda-saqlanadi)
-- [Buyruq qatori (CLI)](#buyruq-qatori-cli)
+- [Зачем osint-forge](#зачем-osint-forge)
+- [Быстрый старт](#быстрый-старт)
+- [Как это работает](#как-это-работает)
+- [Этапы сканирования](#этапы-сканирования)
+- [Источники данных](#источники-данных)
+- [Граф: типы узлов](#граф-типы-узлов)
+- [Встроенные возможности](#встроенные-возможности)
+- [Веб-интерфейс](#веб-интерфейс)
+- [Движок CVE](#движок-cve)
+- [Отчёты и экспорт](#отчёты-и-экспорт)
+- [Непрерывный мониторинг](#непрерывный-мониторинг)
+- [Модель безопасности](#модель-безопасности)
+- [Настройки и ключи API](#настройки-и-ключи-api)
+- [Где хранятся данные](#где-хранятся-данные)
+- [Командная строка (CLI)](#командная-строка-cli)
 - [HTTP API](#http-api)
-- [Qurish (build)](#qurish-build)
-- [Testlar](#testlar)
-- [Loyiha tuzilishi](#loyiha-tuzilishi)
-- [Muammolarni hal qilish](#muammolarni-hal-qilish)
-- [Ma'lum cheklovlar va tugallanmagan ishlar](#malum-cheklovlar-va-tugallanmagan-ishlar)
-- [Litsenziya va mas'uliyat](#litsenziya-va-masuliyat)
+- [Сборка](#сборка)
+- [Тесты](#тесты)
+- [Структура проекта](#структура-проекта)
+- [Решение проблем](#решение-проблем)
+- [Известные ограничения и незавершённые работы](#известные-ограничения-и-незавершённые-работы)
+- [Лицензия и ответственность](#лицензия-и-ответственность)
 
 ---
 
-## Nega osint-forge
+## Зачем osint-forge
 
-Oddiy recon jarayonida siz o'nlab alohida vositalarni (subfinder, nmap, httpx,
-nuclei, waybackurls…) ketma-ket ishga tushirasiz, natijalarni qo'lda
-birlashtirasiz va matnli fayllardan ma'noni izlaysiz. **osint-forge** bularning
-hammasini bitta dvigatel ostiga yig'adi va natijani **bog'langan graf** sifatida
-ko'rsatadi, shuning uchun:
+В обычном процессе разведки вы по очереди запускаете десятки отдельных
+инструментов (subfinder, nmap, httpx, nuclei, waybackurls…), вручную
+объединяете результаты и ищете смысл в текстовых файлах. **osint-forge**
+собирает всё это под одним движком и показывает результат как **связанный
+граф**, поэтому:
 
-- **Bir qarashda tushuniladi** — qaysi IP qaysi domenga, qaysi port qaysi
-  servisga, qaysi CVE qaysi servisga tegishli ekani ko'rinib turadi.
-- **Takrorlanmaydi** — bir xil narsa turli manbadan topilsa, bitta tugunga
-  birlashadi (deterministik ID: `ip:1.2.3.4`).
-- **Xavfsiz** — ruxsat (consent) bo'lmasa hech qanday aktiv so'rov yuborilmaydi,
-  va qamrov (scope) nishon chegarasidan chiqmaydi.
-- **O'rganish uchun qulay** — har bir tugun uchun "nega muhim, qo'lda nimani
-  tekshirish kerak, qaysi vosita bilan" degan o'zbekcha ko'rsatma bor.
+- **Понятно с одного взгляда** — видно, какой IP относится к какому домену,
+  какой порт — к какому сервису, какая CVE — к какому сервису.
+- **Без дублей** — если один и тот же объект найден разными источниками, он
+  сливается в один узел (детерминированный ID: `ip:1.2.3.4`).
+- **Безопасно** — без согласия (consent) не отправляется ни одного активного
+  запроса, а область сканирования (scope) не выходит за пределы цели.
+- **Удобно для обучения** — для каждого узла есть подсказка на русском: «почему
+  это важно, что проверить вручную и какими инструментами».
 
 ---
 
-## Tez boshlash
+## Быстрый старт
 
-Eng oddiy yo'l — ichki `start.sh` skripti. U birinchi marta frontend va
-serverni o'zi quradi, so'ng veb-serverni ishga tushiradi:
+Самый простой способ — встроенный скрипт `start.sh`. При первом запуске он сам
+собирает фронтенд и сервер, затем запускает веб-сервер:
 
 ```sh
 git clone https://github.com/voidsecurity404/osint-forge.git
 cd osint-forge
 
-./start.sh            # brauzerda: http://localhost:8081
+./start.sh            # в браузере: http://localhost:8081
 ```
 
-`start.sh` buyruqlari:
+Команды `start.sh`:
 
-| Buyruq                                | Nima qiladi                                                        |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| `./start.sh`                          | Serverni ishga tushiradi (birinchi marta yoki kod o'zgargan bo'lsa avval quradi). |
-| `./start.sh build`                    | Frontend + serverni qaytadan quradi.                             |
-| `./start.sh dev`                      | Go server (`:8081`) + Vite "hot reload". Interfeys Vite manzilida (standart `http://localhost:5173`) ochiladi, `/api` so'rovlari 8081 ga proksilanadi. |
-| `./start.sh run -open`                | Brauzerni avtomatik ochadi.                                      |
-| `./start.sh run -addr 0.0.0.0:8081`   | Tarmoqdagi barcha interfeyslarda tinglaydi (**login yo'q!** — pastga qarang). |
-| `./start.sh help`                     | Ichki yordamni chiqaradi.                                        |
+| Команда                               | Что делает                                                         |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `./start.sh`                          | Запускает сервер (при первом запуске или после изменения кода сначала собирает его). |
+| `./start.sh build`                    | Заново собирает фронтенд и сервер.                                 |
+| `./start.sh dev`                      | Go-сервер (`:8081`) + горячая перезагрузка Vite. Интерфейс открывается по адресу Vite (по умолчанию `http://localhost:5173`), запросы `/api` проксируются на 8081. |
+| `./start.sh run -open`                | Автоматически открывает браузер.                                   |
+| `./start.sh run -addr 0.0.0.0:8081`   | Слушает на всех сетевых интерфейсах (**авторизации нет!** — см. ниже). |
+| `./start.sh help`                     | Выводит встроенную справку.                                        |
 
-`run` dan keyingi barcha argumentlar to'g'ridan-to'g'ri binary'ga uzatiladi.
-Binary'ning o'zida faqat ikkita bayroq bor: `-addr` (standart `127.0.0.1:8081`)
-va `-open`.
+Все аргументы после `run` передаются бинарнику как есть. У самого бинарника
+только два флага: `-addr` (по умолчанию `127.0.0.1:8081`) и `-open`.
 
-Standart holatda server faqat `127.0.0.1:8081` (shu kompyuter) da tinglaydi.
-API boshqa saytlardan kelgan so'rovlarni rad etadi (CSRF himoyasi), shuning
-uchun brauzeringizda ochiq boshqa veb-sahifalar uni boshqara olmaydi.
+По умолчанию сервер слушает только `127.0.0.1:8081` (этот компьютер). API
+отклоняет запросы с других сайтов (защита от CSRF), поэтому другие открытые в
+браузере страницы не могут им управлять.
 
-**Kerak bo'lgan narsalar:**
+**Что понадобится:**
 
-- **Ishga tushirish uchun** — hech narsa (bitta statik fayl).
-- **Qurish uchun** — [Go 1.26+](https://go.dev) va [Node.js](https://nodejs.org)
-  + npm (faqat interfeysni qurishga; natija binary'ga joylanadi).
-- **Ixtiyoriy** — `nmap` (aniqroq servis versiyalari → aniqroq CVE), Chromium
-  yoki Firefox (skrinshotlar), `nuclei` (qo'shimcha shablonlar). Ular bo'lmasa,
-  tegishli bosqich o'tkazib yuboriladi yoki sof-Go zaxirasi ishlaydi.
+- **Для запуска** — ничего (один статический файл).
+- **Для сборки** — [Go 1.26+](https://go.dev) и [Node.js](https://nodejs.org)
+  + npm (только для сборки интерфейса; результат встраивается в бинарник).
+- **Необязательно** — `nmap` (точнее версии сервисов → точнее CVE), Chromium
+  или Firefox (скриншоты), `nuclei` (дополнительные шаблоны). Если их нет,
+  соответствующий этап пропускается или работает резервная реализация на Go.
 
-### Nishon formatlari
+### Форматы цели
 
-Nishon maydoniga quyidagilarni kiritish mumkin — kiritilgan qiymat avval
-normallashtiriladi:
+В поле цели можно ввести следующее — значение сначала нормализуется:
 
-| Kiritilgan                                   | Qanday talqin qilinadi                                   |
-| -------------------------------------------- | -------------------------------------------------------- |
-| `example.com`                                | Domen                                                    |
-| `https://www.example.com:8443/login?x=1`     | `www.example.com` — sxema, port, yo'l va so'rov olib tashlanadi |
-| `1.1.1.1`                                    | IPv4 manzil                                              |
-| `2606:4700::1111`, `[2606:4700::1111]:443`   | IPv6 manzil                                              |
-| `!!!`, `localhost`, `a..b`, `-x.com`         | **Rad etiladi** — TLD yo'q yoki domen buzuq             |
+| Ввод                                         | Как интерпретируется                                      |
+| -------------------------------------------- | --------------------------------------------------------- |
+| `example.com`                                | Домен                                                     |
+| `https://www.example.com:8443/login?x=1`     | `www.example.com` — схема, порт, путь и запрос отбрасываются |
+| `1.1.1.1`                                    | Адрес IPv4                                                |
+| `2606:4700::1111`, `[2606:4700::1111]:443`   | Адрес IPv6                                                |
+| `!!!`, `localhost`, `a..b`, `-x.com`         | **Отклоняется** — нет TLD или домен некорректен           |
 
-Domen kamida ikki qismdan (masalan `nom.tld`) iborat bo'lishi, TLD esa faqat
-raqamdan iborat bo'lmasligi kerak. Interfeys nishonni qanday tushunishini
-`GET /api/parse?target=…` orqali oldindan ko'rish mumkin.
+Домен должен состоять минимум из двух частей (например, `имя.tld`), а TLD не
+может состоять только из цифр. Как интерфейс поймёт цель, можно заранее
+посмотреть через `GET /api/parse?target=…`.
 
 ---
 
-## Qanday ishlaydi
+## Как это работает
 
-osint-forge uchta qatlamdan iborat:
+osint-forge состоит из трёх слоёв:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Brauzer (Svelte + Cytoscape.js)                         │
-│  - graf, jadval, galereya, panellar                      │
+│  Браузер (Svelte + Cytoscape.js)                         │
+│  - граф, таблица, галерея, панели                        │
 └───────────────┬──────────────────────┬──────────────────┘
                 │ JSON API (/api/*)     │ SSE (/api/events)
-                │ so'rovlar             │ jonli yangilanishlar
+                │ запросы               │ живые обновления
 ┌───────────────▼──────────────────────▼──────────────────┐
-│  Go veb-server (main.go, api.go, sse.go)                  │
-│  - HTTP marshrutlar, hodisa uzatish (hub), SPA xizmati    │
+│  Веб-сервер на Go (main.go, api.go, sse.go)               │
+│  - HTTP-маршруты, рассылка событий (hub), отдача SPA      │
 └───────────────┬──────────────────────────────────────────┘
                 │
 ┌───────────────▼──────────────────────────────────────────┐
-│  Skan dvigateli (internal/)                               │
+│  Движок сканирования (internal/)                          │
 │  core · graph · recon · scan · cve · history · notes …    │
 └───────────────────────────────────────────────────────────┘
 ```
 
-- **Frontend** — Svelte 5 (runes) + Cytoscape.js grafi. Qurilgach
-  (`frontend/dist`), to'liq holda Go binary'siga joylanadi (`go:embed`).
-- **Veb-server** — har bir brauzer so'rovini JSON API orqali qabul qiladi,
-  skan natijalarini **Server-Sent Events (SSE)** orqali jonli uzatadi.
-- **Dvigatel** — har bir imkoniyat `core.Source` — kichik, mustaqil razvedka
-  bo'lagi. Dvigatel ularni bosqichma-bosqich ishga tushiradi (pastga qarang).
+- **Фронтенд** — Svelte 5 (runes) + граф на Cytoscape.js. После сборки
+  (`frontend/dist`) полностью встраивается в бинарник Go (`go:embed`).
+- **Веб-сервер** — принимает каждый запрос браузера через JSON API и в
+  реальном времени передаёт результаты сканирования через **Server-Sent
+  Events (SSE)**.
+- **Движок** — каждая возможность — это `core.Source`, небольшой независимый
+  модуль разведки. Движок запускает их поэтапно (см. ниже).
 
-Grafning markazida **konkurentlikka chidamli** ma'lumotlar modeli turadi.
-Bir manbada xatolik (panic) yuz bersa, u ushlab olinadi va qayd qilinadi —
-**butun skan hech qachon qulamaydi**, qolgan manbalar ishini davom ettiradi.
+В центре графа — **устойчивая к конкурентному доступу** модель данных. Если в
+одном источнике происходит ошибка (panic), она перехватывается и записывается в
+журнал — **сканирование целиком никогда не падает**, остальные источники
+продолжают работу.
 
-Bir vaqtda faqat **bitta** skan ishlaydi. Har bir yangi skan toza grafdan
-boshlanadi; tugagach, natija avtomatik ravishda tarixga saqlanadi.
+Одновременно выполняется только **одно** сканирование. Каждое новое
+сканирование начинается с чистого графа; по завершении результат автоматически
+сохраняется в историю.
 
-**Chidamlilik:**
+**Устойчивость:**
 
-- Server qayta ishga tushsa, oxirgi skan avtomatik qaytadi.
-- Skan davomida sahifani yangilasangiz yoki ikkinchi tab ochsangiz, graf
-  serverdan qayta sinxronlanadi. Server grafida endi yo'q tugunlar ekrandan
-  olib tashlanadi — hech narsa yo'qolmaydi va eskisi ham qolib ketmaydi.
-- Skan qayerdan boshlanmasin (shu tab, boshqa tab yoki monitoring), **barcha
-  ochiq tablar** uni ko'radi va grafini tozalab, yangisini chizadi
-  (`scan:start` hodisasi). Tarixdan scan ochilsa, boshqa tablar ham yangilanadi.
-- Grafni o'qiydigan va unga yozadigan manbalar bir vaqtda ishlaganda ham
-  ma'lumotlar modeli xavfsiz: o'qish har doim tugunning nusxasidan bo'ladi.
-  Dastur race detector (`go test -race`) bilan sinalgan.
-
----
-
-## Skan bosqichlari
-
-Manbalar **olti bosqichda** ketma-ket, bosqich ichida esa **parallel** ishlaydi.
-Avvalgi bosqich topgan narsani keyingisi ishlatadi:
-
-```
- Discovery → Resolve → Probe → Web → Enrich → Post
- (passiv:    (nomlar   (aktiv:  (nostandart  (hosila: CVE,  (yakuniy tahlil:
-  nom topish) → IP)     port,    portdagi     TLS, fuzz,     parametrlar)
-                        HTTP)    web)         topilmalar)
-```
-
-1. **Discovery** — passiv manbalar nom va infratuzilmani topadi (DNS, RDAP,
-   crt.sh, OTX, subdomain brute-force).
-2. **Resolve** — topilgan host nomlari IP'ga aylantiriladi, shunda aktiv
-   skanning aniq nishonlari bo'ladi.
-3. **Probe** — aktiv manbalar topilgan narsalarni tekshiradi (port-skan, HTTP,
-   reverse-IP, zone transfer). Shodan va Censys passiv bo'lsa-da shu bosqichda
-   ishlaydi — ular topgan servis versiyalari CVE moslashtirishga yetib borishi
-   uchun.
-4. **Web** — nmap/port-skan topgan **nostandart portlardagi** (8080, 8443,
-   3000…) web servislar ham probe qilinadi — ularga ham URL tugun, status
-   kodi, fuzzing va tekshiruvlar tegadi.
-5. **Enrich** — hosila tahlil: CVE moslashtirish, TLS, web tekshiruvlar,
-   fuzzing, subdomain takeover, JS tahlili, built-in shablonlar, skrinshotlar,
-   shuningdek Wayback, ASN, GitHub va HIBP.
-6. **Post** — yakuniy tahlil hamma topilgan ustida ishlaydi: URL parametrlarini
-   ajratib, ularni SQLi/XSS/redirect/LFI nomzodlari sifatida belgilaydi.
-
-Har bir manbaning aniq bosqichi (qavs ichida — "Manbalar" panelida va loglarda
-ko'rinadigan nomi):
-
-| Bosqich       | Manbalar                                                                                     |
-| ------------- | -------------------------------------------------------------------------------------------- |
-| **Discovery** | `dns`, `whois/rdap`, `crt.sh`, `otx`, `subdomain-brute`                                       |
-| **Resolve**   | `dns-resolve`                                                                                |
-| **Probe**     | `nmap` *(yoki u bo'lmasa `portscan`)*, `http-probe`, `reverse-ip`, `zone-transfer`, `shodan`, `censys` |
-| **Web**       | `http-ports`                                                                                 |
-| **Enrich**    | `cve`, `tls`, `webchecks`, `checks`, `fuzz`, `takeover`, `js-analyze`, `robots/sitemap`, `screenshots`, `nuclei`, `wayback`, `asn`, `github`, `hibp` |
-| **Post**      | `params`                                                                                     |
-
-Kaliti yoki sozlamasi bo'lmagan manba (masalan, `shodan_key` bo'sh) skan
-boshida ro'yxatdan butunlay chiqariladi va progressda hisoblanmaydi.
-
-Skan to'xtatilsa yoki vaqt byudjeti tugasa, ishlab turgan manbalar keyingi
-tekshiruv nuqtasida to'xtaydi. Natija **qisman** hisoblanadi: u saqlanadi
-(monitoring skanlaridan tashqari), lekin monitoring uni "yo'qolgan narsalar"
-sifatida taqqoslamaydi.
+- После перезапуска сервера последнее сканирование автоматически
+  восстанавливается.
+- Если во время сканирования обновить страницу или открыть вторую вкладку,
+  граф заново синхронизируется с сервером. Узлы, которых больше нет в графе
+  сервера, убираются с экрана — ничего не теряется и ничего устаревшего не
+  остаётся.
+- Откуда бы ни было запущено сканирование (эта вкладка, другая вкладка или
+  мониторинг), **все открытые вкладки** видят его, очищают граф и рисуют новый
+  (событие `scan:start`). Если открыть сканирование из истории, другие вкладки
+  тоже обновятся.
+- Модель данных безопасна, даже когда источники одновременно читают граф и
+  пишут в него: чтение всегда идёт из копии узла. Программа проверена race
+  detector'ом (`go test -race`).
 
 ---
 
-## Ma'lumot manbalari
+## Этапы сканирования
 
-### Passiv — nishonga paket yubormaydi (har doim ishlaydi)
+Источники работают **в шесть этапов** последовательно, а внутри этапа —
+**параллельно**. Следующий этап использует то, что нашёл предыдущий:
 
-| Manba             | Nima topadi                                                  | Kalit kerakmi           |
-| ----------------- | ----------------------------------------------------------- | ----------------------- |
-| **DNS**           | A/AAAA/MX/NS/TXT/CNAME yozuvlari + teskari DNS              | –                       |
-| **RDAP / WHOIS**  | Ro'yxatdan o'tish ma'lumoti (zamonaviy WHOIS)              | –                       |
-| **crt.sh**        | Sertifikat shaffofligi (CT) loglaridan subdomenlar          | –                       |
-| **ASN (Cymru)**   | IP → avtonom tizim + BGP prefiks (Team Cymru DNS)          | –                       |
-| **Wayback**       | Internet Archive'dan tarixiy URL/endpoint'lar (filtrlangan, HTTPS orqali) | –          |
-| **OTX**           | Passiv-DNS host va IP'lar (AlienVault OTX) — IP'lar **tarixiy**, aktiv skanga kirmaydi | – |
-| **Subdomain brute** | Ichki 5000 so'zlik ro'yxat bilan keng tarqalgan subdomenlar | –                   |
-| **Parameters**    | Barcha URL'lardan query parametrlari, SQLi/XSS/redirect/LFI/SSRF/IDOR nomzodlariga ajratib | – |
-| **Reverse-IP**    | Bitta IP'dagi boshqa domen va subdomenlar                   | SecurityTrails / VT     |
-| **Shodan**        | Ochiq portlar, banner'lar, qo'shimcha hostlar               | Shodan                  |
-| **Censys**        | Sertifikat va host ma'lumoti (Censys Search v2)             | Censys ID + secret      |
-| **GitHub**        | Nishon haqida ochiq kod (sizib chiqqan config/kalit)        | GitHub token            |
-| **CVE**           | Topilgan servis versiyalariga mos zaifliklar (pastga qarang) | – *(NVD kaliti ixtiyoriy)* |
+```
+ Обнаружение → Разрешение имён → Зондирование → Веб-порты → Обогащение → Анализ
+ (Discovery)   (Resolve)         (Probe)        (Web)       (Enrich)     (Post)
+ пассивный     имена → IP        активно:       веб на      производные: итоговый
+ поиск имён                      порты, HTTP    нестанд.    CVE, TLS,    анализ:
+                                                портах      фаззинг,     параметры
+                                                            находки
+```
 
-> ASN uchun Team Cymru'ning **DNS** xizmati ishlatiladi — shunda nishon IP'si
-> uchinchi tomonga ochiq HTTP so'rovida oshkor bo'lmaydi. Kalitsiz manbalar
-> darhol ishlaydi; kalit talab qiladiganlari kalit bo'lmasa jimgina
-> o'tkazib yuboriladi.
+В интерфейсе и журнале этапы показываются по-русски; в коде и API у них
+стабильные английские ключи (в скобках).
+
+1. **Обнаружение (Discovery)** — пассивные источники находят имена и
+   инфраструктуру (DNS, RDAP, crt.sh, OTX, перебор поддоменов).
+2. **Разрешение имён (Resolve)** — найденные имена хостов превращаются в IP,
+   чтобы у активного сканирования были конкретные цели.
+3. **Зондирование (Probe)** — активные источники проверяют найденное
+   (сканирование портов, HTTP, reverse-IP, перенос зоны). Shodan и Censys хоть
+   и пассивны, работают на этом этапе — чтобы найденные ими версии сервисов
+   успели попасть в сопоставление CVE.
+4. **Веб-порты (Web)** — веб-сервисы на **нестандартных портах**, найденных
+   nmap или сканером портов (8080, 8443, 3000…), тоже зондируются — для них
+   создаются URL-узлы, коды статуса, фаззинг и проверки.
+5. **Обогащение (Enrich)** — производный анализ: сопоставление CVE, TLS,
+   веб-проверки, фаззинг, захват поддоменов, анализ JS, встроенные шаблоны,
+   скриншоты, а также Wayback, ASN, GitHub и HIBP.
+6. **Анализ (Post)** — итоговый анализ по всему найденному: извлекает параметры
+   URL и помечает их как кандидатов на SQLi/XSS/redirect/LFI.
+
+Точный этап каждого источника (в скобках — имя, которое видно в панели
+«Источники» и в журнале):
+
+| Этап                | Источники                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| **Обнаружение**     | `dns`, `whois/rdap`, `crt.sh`, `otx`, `subdomain-brute`                                      |
+| **Разрешение имён** | `dns-resolve`                                                                               |
+| **Зондирование**    | `nmap` *(или, если его нет, `portscan`)*, `http-probe`, `reverse-ip`, `zone-transfer`, `shodan`, `censys` |
+| **Веб-порты**       | `http-ports`                                                                                |
+| **Обогащение**      | `cve`, `tls`, `webchecks`, `checks`, `fuzz`, `takeover`, `js-analyze`, `robots/sitemap`, `screenshots`, `nuclei`, `wayback`, `asn`, `github`, `hibp` |
+| **Анализ**          | `params`                                                                                    |
+
+Источник без ключа или нужной настройки (например, пустой `shodan_key`)
+полностью исключается из списка в начале сканирования и не учитывается в
+прогрессе.
+
+Если сканирование остановлено или истёк лимит времени, работающие источники
+останавливаются в ближайшей точке проверки. Результат считается **неполным**:
+он сохраняется (кроме сканирований мониторинга), но мониторинг не сравнивает
+его как «исчезнувшие объекты».
+
+---
+
+## Источники данных
+
+### Пассивные — не отправляют цели ни одного пакета (работают всегда)
+
+| Источник           | Что находит                                                  | Нужен ключ              |
+| ------------------ | ------------------------------------------------------------ | ----------------------- |
+| **DNS**            | Записи A/AAAA/MX/NS/TXT/CNAME + обратный DNS                 | –                       |
+| **RDAP / WHOIS**   | Регистрационные данные (современный WHOIS)                   | –                       |
+| **crt.sh**         | Поддомены из журналов Certificate Transparency (CT)          | –                       |
+| **ASN (Cymru)**    | IP → автономная система + префикс BGP (DNS Team Cymru)       | –                       |
+| **Wayback**        | Исторические URL/эндпоинты из Internet Archive (с фильтрацией, по HTTPS) | –           |
+| **OTX**            | Хосты и IP из пассивного DNS (AlienVault OTX) — IP **исторические**, в активное сканирование не попадают | – |
+| **Перебор поддоменов** | Распространённые поддомены по встроенному словарю на 5000 слов | –                    |
+| **Параметры**      | Параметры запроса из всех URL с разбивкой на кандидатов SQLi/XSS/redirect/LFI/SSRF/IDOR | – |
+| **Reverse-IP**     | Другие домены и поддомены на том же IP                       | SecurityTrails / VT     |
+| **Shodan**         | Открытые порты, баннеры, дополнительные хосты                | Shodan                  |
+| **Censys**         | Данные о сертификатах и хостах (Censys Search v2)            | Censys ID + secret      |
+| **GitHub**         | Открытый код, упоминающий цель (утёкшие конфиги/ключи)       | Токен GitHub            |
+| **CVE**            | Уязвимости, соответствующие найденным версиям сервисов (см. ниже) | – *(ключ NVD необязателен)* |
+
+> Для ASN используется **DNS**-сервис Team Cymru — так IP цели не раскрывается
+> третьей стороне в открытом HTTP-запросе. Источники без ключей работают сразу;
+> те, что требуют ключ, без него молча пропускаются.
 >
-> **Reverse-IP, Shodan va Censys** faqat nishonning **o'z IP'lari** uchun
-> so'raladi (pastdagi [qamrov qoidasi](#xavfsizlik-modeli)ga qarang). Domenning
-> MX/NS serverlari (masalan, Google pochtasi, Cloudflare DNS) boshqa
-> tashkilotniki — ular uchun so'rov API kvotasini yeb, grafni begona domenlar
-> bilan to'ldirardi.
+> **Reverse-IP, Shodan и Censys** запрашиваются только для **собственных IP
+> цели** (см. [правило области](#модель-безопасности) ниже). Серверы MX/NS
+> домена (например, почта Google, DNS Cloudflare) принадлежат другим
+> организациям — запросы по ним расходовали бы квоту API и заполняли граф
+> чужими доменами.
 >
-> **crt.sh** javobi oqim (stream) sifatida o'qiladi: juda katta domenlarda
-> javob 64 MB chegarasida uzilsa ham, o'qilgan yozuvlar yo'qolmaydi.
-> crt.sh vaqtincha xato qaytarsa (404/429/5xx — bepul xizmat tez-tez band
-> bo'ladi), 2 va 5 soniyadan keyin qayta uriniladi. OTX so'rov limiti (429)
-> xato emas, ogohlantirish sifatida ko'rsatiladi. ASN so'rovlari parallel
-> bajariladi (real nishonda 16 IP: ~35 s → ~7 s).
+> Ответ **crt.sh** читается потоком: даже если на очень больших доменах ответ
+> обрывается на лимите в 64 МБ, уже прочитанные записи не теряются. Если crt.sh
+> временно возвращает ошибку (404/429/5xx — бесплатный сервис часто перегружен),
+> делаются повторные попытки через 2 и 5 секунд. Превышение лимита запросов OTX
+> (429) показывается как предупреждение, а не ошибка. Запросы ASN выполняются
+> параллельно (на реальной цели с 16 IP: ~35 с → ~7 с).
 
-### Aktiv — ruxsat (consent) talab qiladi
+### Активные — требуют согласия (consent)
 
-| Manba                 | Nima qiladi                                                             | Kerak                 |
+| Источник              | Что делает                                                              | Нужно                 |
 | --------------------- | ----------------------------------------------------------------------- | --------------------- |
-| **nmap**              | Servis/versiya aniqlash; portlar, servislar va CPE'lar. IPv4 va IPv6 alohida ishga tushiriladi (`-6`) | PATH'da `nmap` |
-| **Port scan**         | Sof-Go zaxira skaner (banner grabbing bilan) — faqat nmap yo'q bo'lsa    | –                     |
-| **HTTP probe**        | Jonli URL, status, sarlavha, aniqlangan texnologiyalar, email'lar        | –                     |
-| **HTTP ports**        | nmap/port-skan topgan nostandart portdagi web servislar                  | –                     |
-| **TLS checks**        | TLS 1.0/1.1 va muddati o'tgan/tez tugaydigan sertifikatlar (nostandart HTTPS portlarida ham) | – |
-| **robots / sitemap**  | Server e'lon qilgan yo'llar (yolg'on ijobiysiz, host boshiga 100 tagacha); boshqa domendagi sitemap'lar o'tkazib yuboriladi | – |
-| **Content fuzzing**   | Ichki SecLists bilan yo'l/kontent qidirish (soft-404 aqlli)             | –                     |
-| **Web checks**        | CORS xatosi, ochiq `.git`/`.env`, katalog ro'yxati, xavfli metodlar      | –                     |
-| **Built-in checks**   | Ochiq panel/fayllar uchun **dastur ichidagi** shablonli tekshiruv        | – *(ichida)*          |
-| **JS analysis**       | Saytning JS fayllaridan endpoint va sizib chiqqan sirlarni ajratib olish | –                     |
-| **CDN / WAF**         | Cloudflare, Akamai, Fastly, CloudFront, Sucuri, Azure Front Door, AWS ELB | – *(HTTP probe ichida)* |
-| **Favicon hash**      | Shodan uslubidagi MurmurHash3 favicon hash                              | – *(HTTP probe ichida)* |
-| **Takeover**          | Egasiz CNAME orqali subdomain-takeover ehtimolini aniqlash              | –                     |
-| **Screenshots**       | Jonli web hostlar skrinshoti — **dastur ichida**                        | Chromium/Firefox      |
-| **Zone transfer**     | Domen nom serverlariga qarshi AXFR urinishi                             | toggle                |
-| **HIBP**              | HTTP probe yig'gan email'larni "Have I Been Pwned" bazasi bilan tekshirish | HIBP kalit         |
-| **nuclei** *(ixtiyoriy)* | Tizimda alohida o'rnatilgan bo'lsa, ProjectDiscovery nuclei shablonlari | PATH'da `nuclei` + toggle |
+| **nmap**              | Определение сервисов/версий; порты, сервисы и CPE. IPv4 и IPv6 запускаются отдельно (`-6`) | `nmap` в PATH |
+| **Сканер портов**     | Резервный сканер на чистом Go (со снятием баннеров) — только если нет nmap | –                  |
+| **HTTP probe**        | Живые URL, статус, заголовки, обнаруженные технологии, email-адреса     | –                     |
+| **HTTP ports**        | Веб-сервисы на нестандартных портах, найденных nmap/сканером портов    | –                     |
+| **Проверки TLS**      | TLS 1.0/1.1 и просроченные/скоро истекающие сертификаты (и на нестандартных HTTPS-портах) | – |
+| **robots / sitemap**  | Пути, объявленные сервером (без ложных срабатываний, до 100 на хост); sitemap на чужих доменах пропускаются | – |
+| **Фаззинг контента**  | Поиск путей/контента по встроенным SecLists (с умной обработкой soft-404) | –                    |
+| **Веб-проверки**      | Ошибки CORS, открытые `.git`/`.env`, листинг каталогов, опасные методы  | –                     |
+| **Встроенные проверки** | Проверка по шаблонам **внутри программы** на открытые панели/файлы    | – *(встроено)*        |
+| **Анализ JS**         | Извлечение эндпоинтов и утёкших секретов из JS-файлов сайта             | –                     |
+| **CDN / WAF**         | Cloudflare, Akamai, Fastly, CloudFront, Sucuri, Azure Front Door, AWS ELB | – *(внутри HTTP probe)* |
+| **Хэш favicon**       | Хэш favicon MurmurHash3 в стиле Shodan                                  | – *(внутри HTTP probe)* |
+| **Takeover**          | Обнаружение возможного захвата поддомена через невостребованный CNAME   | –                     |
+| **Скриншоты**         | Скриншоты живых веб-хостов — **внутри программы**                       | Chromium/Firefox      |
+| **Перенос зоны**      | Попытка AXFR к серверам имён домена                                     | переключатель         |
+| **HIBP**              | Проверка email-адресов, собранных HTTP probe, по базе «Have I Been Pwned» | Ключ HIBP           |
+| **nuclei** *(необязательно)* | Шаблоны ProjectDiscovery nuclei, если он установлен в системе    | `nuclei` в PATH + переключатель |
 
-Ichki so'z ro'yxatlari (SecLists qismlari) **binary'ga joylangan**, shuning
-uchun fuzzing va brute-force hech qanday qo'shimcha yuklab olishsiz ishlaydi.
+Встроенные словари (части SecLists) **вшиты в бинарник**, поэтому фаззинг и
+перебор работают без каких-либо дополнительных загрузок.
 
-### Aktiv tekshiruvlar nimani qidiradi
+### Что ищут активные проверки
 
-- **Web checks** — CORS (begona `Origin` aks ettirilsa va credentials ruxsat
-  etilsa — `high`; faqat aks ettirilsa yoki `*` credentials bilan kelsa —
-  `medium`), ochiq `/.git/HEAD`, ochiq `/.env`, katalog ro'yxati
-  (`Index of /`), `OPTIONS` orqali yoqilgan xavfli HTTP metodlar.
-- **DNS (passiv)** — SPF va DMARC. SPF faqat pochta bilan ishlaydigan nomlar
-  uchun talab qilinadi (asosiy domen yoki MX yozuvi bor nom). Subdomenning o'z
-  DMARC yozuvi bo'lmasa, RFC 7489 bo'yicha asosiy domenning siyosati
-  hisobga olinadi. DNS so'rovi xato bilan tugasa (timeout, SERVFAIL),
-  "yozuv yo'q" degan yolg'on topilma chiqarilmaydi.
-- **JS analysis** — AWS access key, Google API key, Slack token, GitHub token,
-  Stripe live secret key, private key bloklari va JWT.
-- **Takeover** — CNAME quyidagi servislardan biriga ko'rsatsa va javobda
-  "egasiz resurs" belgisi bo'lsa: GitHub Pages, Heroku, AWS S3, Shopify,
-  Fastly, Pantheon, Tumblr, Zendesk, Read the Docs, Surge.sh, Bitbucket.
-- **Parameters** — parametr nomiga qarab toifalaydi: `sqli`, `xss`,
-  `redirect`, `lfi/path`, `ssrf`, `idor`. Bu **nomzod**, tasdiqlangan zaiflik
-  emas — qo'lda tekshirish kerak.
-- **CDN / WAF** — host CDN ortida bo'lsa, siz skanlagan IP — bu **chekka
-  (edge)** server, asl server emas. Port va host topilmalari CDN'ni tasvirlaydi.
-- **Redirect'lar** — HTTP so'rovlari qamrovdagi hostlar orasida yo'naltirishga
-  ergashadi (5 tagacha). Qamrovdan tashqaridagi hostga yo'naltirishga
-  **ergashilmaydi**: 3xx javobning o'zi va uning `location` manzili yoziladi.
-- **Fuzzing** — bir vaqtda 4 tagacha host tekshiriladi; har bir host uchun
-  so'rov tezligi chegarasi (`rate_limit_per_host`) alohida amal qiladi.
-
----
-
-## Graf: tugun turlari
-
-Har bir tugun deterministik ID'ga ega (`<tur>:<kalit>`, masalan
-`domain:example.com`, `ip:1.2.3.4`), shuning uchun bir narsa turli manbadan
-topilsa ham bitta tugunga birlashadi va xususiyatlari qo'shib boriladi.
-
-| Tur           | Ma'nosi                                                     |
-| ------------- | ----------------------------------------------------------- |
-| `domain`      | Asosiy domen (skan ildizi)                                  |
-| `subdomain`   | Topilgan subdomen                                           |
-| `ip`          | IPv4/IPv6 manzil                                            |
-| `port`        | Ochiq port                                                  |
-| `service`     | Port ortidagi servis va uning versiyasi                     |
-| `technology`  | Aniqlangan texnologiya (server, framework, CMS…)            |
-| `certificate` | TLS sertifikat                                              |
-| `asn`         | Avtonom tizim / BGP prefiks                                 |
-| `whois_org`   | Ro'yxatdan o'tgan tashkilot                                 |
-| `url`         | Jonli URL yoki endpoint                                     |
-| `email`       | Topilgan email manzil                                       |
-| `cve`         | Ma'lum zaiflik                                              |
-| `finding`     | Xavfsizlik topilmasi (noto'g'ri sozlama, oshkor resurs)     |
-| `param`       | Sinash uchun URL query parametri                            |
-| `bucket`      | Bulut saqlash bucket'i (S3/GCS/Azure) — *hali hech bir manba yaratmaydi, [pastga qarang](#malum-cheklovlar-va-tugallanmagan-ishlar)* |
-
-Ikki tugun orasida faqat **bitta** yo'naltirilgan bog'lanish (edge) saqlanadi —
-birinchi topilgan munosabat nomi qoladi. Bu grafda qalin "yelpig'ich"
-chiziqlarning oldini oladi.
+- **Веб-проверки** — CORS (если чужой `Origin` отражается и разрешены
+  credentials — `high`; если только отражается или `*` приходит вместе с
+  credentials — `medium`), открытый `/.git/HEAD`, открытый `/.env`, листинг
+  каталога (`Index of /`), опасные HTTP-методы, включённые через `OPTIONS`.
+- **DNS (пассивно)** — SPF и DMARC. SPF требуется только для имён, которые
+  работают с почтой (основной домен или имя с записью MX). Если у поддомена нет
+  своей записи DMARC, по RFC 7489 учитывается политика основного домена. Если
+  DNS-запрос завершился ошибкой (таймаут, SERVFAIL), ложная находка «записи
+  нет» не создаётся.
+- **Анализ JS** — ключ доступа AWS, ключ Google API, токен Slack, токен GitHub,
+  живой секретный ключ Stripe, блоки приватных ключей и JWT.
+- **Takeover** — если CNAME указывает на один из следующих сервисов, а в ответе
+  есть признак «невостребованного ресурса»: GitHub Pages, Heroku, AWS S3,
+  Shopify, Fastly, Pantheon, Tumblr, Zendesk, Read the Docs, Surge.sh,
+  Bitbucket.
+- **Параметры** — классифицируются по имени: `sqli`, `xss`, `redirect`,
+  `lfi/path`, `ssrf`, `idor`. Это **кандидат**, а не подтверждённая уязвимость —
+  нужна ручная проверка.
+- **CDN / WAF** — если хост находится за CDN, просканированный IP — это
+  **пограничный (edge)** сервер, а не исходный. Находки по портам и хостам
+  описывают CDN.
+- **Редиректы** — HTTP-запросы следуют перенаправлениям между хостами в области
+  (до 5). Перенаправлениям на хосты вне области **не следуют**: записывается сам
+  ответ 3xx и его адрес `location`.
+- **Фаззинг** — одновременно проверяется до 4 хостов; ограничение скорости
+  (`rate_limit_per_host`) действует для каждого хоста отдельно.
 
 ---
 
-## Dastur ichidagi imkoniyatlar
+## Граф: типы узлов
 
-Quyidagi uchta imkoniyat **standart yoqilgan** va **hech narsa o'rnatish
-shart emas** — bu ularni tashqi dasturlardan farqlaydi:
+У каждого узла детерминированный ID (`<тип>:<ключ>`, например
+`domain:example.com`, `ip:1.2.3.4`), поэтому объект, найденный разными
+источниками, сливается в один узел, а его свойства дополняются.
 
-- **Built-in checks (shablonli tekshiruv)** — ochiq Spring Actuator, phpinfo,
-  Adminer, SQL dump, Swagger/OpenAPI, Go pprof, `.DS_Store`, WordPress va
-  shunga o'xshash oshkor bo'lgan resurslarni topadi. Shablonlar (`.json`)
-  binary ichiga joylangan; dvigatel nuclei uslubidagi minimal moslashtirgich
-  (status/so'z/regex) bilan ishlaydi. Hamma tekshiruv **faqat o'qiydi** (GET),
-  hech narsani buzmaydi. **Soft-404 himoyasi:** har bir host avval mavjud
-  bo'lmagan tasodifiy yo'llar bilan kalibrlanadi. Har qanday yo'lga 200
-  qaytaradigan (yoki so'ralgan yo'lni sahifada aks ettiradigan) saytlarda
-  shablon "topilmasi" o'sha kalibrlash sahifasiga o'xshasa, u tashlab yuboriladi.
-- **Screenshots** — tizimda mavjud **Chromium yoki Firefox** bilan jonli web
-  hostlarning rasmini oladi (bir vaqtda 3 tagacha). Alohida brauzer o'rnatish
-  shart emas; biror brauzer topilmasa, bu bosqich jimgina o'tkazib yuboriladi.
-  Qidirish tartibi: avval Chromium oilasi (`chromium`, `chromium-browser`,
-  `google-chrome`, `google-chrome-stable`, `chrome`, `chrome-headless-shell`,
-  `brave-browser`), keyin Firefox oilasi (`firefox`, `firefox-esr`,
-  `librewolf`). Firefox ochiq bo'lsa ham alohida nusxa ishlatiladi. Chromium
-  **sandbox bilan** ishga tushiriladi (nishon sayti zararli bo'lishi mumkin);
-  `--no-sandbox` faqat dastur root sifatida ishlaganda qo'shiladi. Rasm avval
-  vaqtinchalik faylga yoziladi — muvaffaqiyatsiz urinish oldingi skanning
-  rasmini buzmaydi. Skrinshotlar tafsilotlar panelidan **so'rov bo'yicha** ham
-  olinadi (yuqoriga qarang). Bitta sahifa uchun bir vaqtda faqat bitta rasm
-  olinadi (skan va panel bir sahifani so'rasa, natija umumiy), butun dasturda
-  esa bir vaqtda eng ko'pi **4 ta** sahifa suratga olinadi.
+В интерфейсе типы показываются по-русски (столбец «В интерфейсе»).
 
-### Tez skrinshot: doimiy Firefox (WebDriver BiDi)
+| Тип           | В интерфейсе  | Значение                                                    |
+| ------------- | ------------- | ----------------------------------------------------------- |
+| `domain`      | домен         | Основной домен (корень сканирования)                        |
+| `subdomain`   | поддомен      | Найденный поддомен                                          |
+| `ip`          | IP            | Адрес IPv4/IPv6                                             |
+| `port`        | порт          | Открытый порт                                               |
+| `service`     | сервис        | Сервис за портом и его версия                               |
+| `technology`  | технология    | Обнаруженная технология (сервер, фреймворк, CMS…)           |
+| `certificate` | сертификат    | TLS-сертификат                                              |
+| `asn`         | ASN           | Автономная система / префикс BGP                            |
+| `whois_org`   | организация   | Организация-регистрант                                      |
+| `url`         | URL           | Живой URL или эндпоинт                                      |
+| `email`       | email         | Найденный email-адрес                                       |
+| `cve`         | CVE           | Известная уязвимость                                        |
+| `finding`     | находка       | Находка безопасности (ошибка конфигурации, открытый ресурс) |
+| `param`       | параметр      | Параметр запроса URL для проверки                           |
+| `bucket`      | бакет         | Облачный бакет (S3/GCS/Azure) — *пока ни один источник их не создаёт, [см. ниже](#известные-ограничения-и-незавершённые-работы)* |
 
-Firefox bo'lsa, skrinshotlar **bitta doimiy headless Firefox** orqali
-olinadi. U Firefox'ga o'rnatilgan WebDriver BiDi protokoli bilan boshqariladi,
-qo'shimcha hech narsa o'rnatilmaydi. Har bir sahifa — shu brauzerdagi yangi
-tab, butun brauzerni qayta ishga tushirish yo'q.
+Между двумя узлами хранится только **одна** направленная связь (edge) —
+остаётся название первого найденного отношения. Это предотвращает толстые
+«веера» линий на графе.
 
-- **Sahifani kutish qoidasi:** sahifa to'liq yuklansa (`load`), darhol
-  suratga olinadi. Biror resurs (treker, o'lik CDN, yopiq port) osilib qolsa,
-  DOM tayyor bo'lgandan **3 soniya** o'tib, shu paytgacha chizilgan narsa
-  olinadi. 15 soniyada DOM ham kelmasa, sahifa "javob bermadi" hisoblanadi.
-- **Self-signed / noto'g'ri sertifikatli** saytlar ham suratga olinadi (recon
-  nishonlarida keng tarqalgan).
-- Firefox'ning o'z xato sahifasi (DNS topilmadi, ulanish rad etildi, TLS
-  xatosi) skrinshot sifatida saqlanmaydi — bunday holatda aniq xato
-  qaytariladi.
-- Brauzer birinchi so'rovda ishga tushadi (~1–1.5 s), **3 daqiqa** ishlatilmasa
-  yopiladi, qulasa avtomatik qayta ishga tushadi, server to'xtaganda yopiladi.
-- BiDi ishlamasa (masalan, juda eski Firefox), avvalgi bir martalik
-  `firefox --screenshot` usuli zaxira sifatida ishlaydi.
+---
 
-O'lchovlar (shu kompyuterdagi Firefox, mahalliy sahifalar):
+## Встроенные возможности
 
-| Holat | Avvalgi usul (har safar yangi brauzer) | Hozir |
-| ----- | -------------------------------------- | ----- |
-| Oddiy sahifa (brauzer ishlab turganda) | 0.6–3 s | **~0.3 s** |
-| Bitta resursi osilib qolgan sahifa | 30–40 s, **rasm yo'q** | **~3 s, rasm bor** |
-| 8 soniyalik sekin rasmi bor sahifa | ~8.6 s | ~3 s |
-| Self-signed TLS sayt | brauzer xato sahifasi | **~0.25 s, haqiqiy sahifa** |
-| 6 ta sahifa parallel | 6 ta alohida brauzer | **~0.6 s jami, bitta brauzer** |
+Следующие три возможности **включены по умолчанию** и **ничего не требуют
+устанавливать** — этим они отличаются от внешних программ:
 
-Chromium uchun bir martalik usul qoladi, lekin unga 10 soniyalik qat'iy
-chegara (`--timeout`) qo'yilgan: osilgan resurs rasmni bloklamaydi.
-- **Favicon hash** — sof Go'da hisoblanadigan Shodan uslubidagi mmh3 hash
-  (shu hash bilan Shodan'da `http.favicon.hash:<hash>` orqali bir xil
-  faviconli boshqa hostlarni topish mumkin).
+- **Встроенные проверки (по шаблонам)** — находят открытые Spring Actuator,
+  phpinfo, Adminer, дампы SQL, Swagger/OpenAPI, Go pprof, `.DS_Store`, WordPress
+  и подобные раскрытые ресурсы. Шаблоны (`.json`) вшиты в бинарник; движок
+  работает с минимальным сопоставителем в стиле nuclei (статус/слово/regex).
+  Все проверки **только читают** (GET) и ничего не ломают. **Защита от
+  soft-404:** каждый хост сначала калибруется случайными несуществующими путями.
+  На сайтах, которые возвращают 200 на любой путь (или отражают запрошенный
+  путь на странице), «находка» шаблона отбрасывается, если она похожа на
+  калибровочную страницу.
+- **Скриншоты** — снимки живых веб-хостов с помощью установленного в системе
+  **Chromium или Firefox** (до 3 одновременно). Отдельно ставить браузер не
+  нужно; если ни один не найден, этап молча пропускается. Порядок поиска:
+  сначала семейство Chromium (`chromium`, `chromium-browser`, `google-chrome`,
+  `google-chrome-stable`, `chrome`, `chrome-headless-shell`, `brave-browser`),
+  затем семейство Firefox (`firefox`, `firefox-esr`, `librewolf`). Даже если
+  Firefox уже открыт, используется отдельный экземпляр. Chromium запускается
+  **с песочницей** (сайт цели может быть вредоносным); `--no-sandbox`
+  добавляется, только когда программа работает от root. Снимок сначала
+  пишется во временный файл — неудачная попытка не портит снимок прошлого
+  сканирования. Скриншоты можно делать и **по запросу** из панели подробностей
+  (см. ниже). Для одной страницы одновременно делается только один снимок (если
+  сканирование и панель запросили одну страницу, результат общий), а во всей
+  программе одновременно снимается не более **4** страниц.
 
-Haqiqiy tashqi `nuclei` tizimda bo'lsa, u ham **qo'shimcha** sifatida ishlaydi
-(ixtiyoriy, standart o'chiq) — ya'ni dastur ichidagi tekshiruvlar ustiga
-ProjectDiscovery'ning to'liq shablon to'plamini qo'shadi.
+### Быстрые скриншоты: постоянный Firefox (WebDriver BiDi)
 
-### Ichki shablonlar ro'yxati
+Если есть Firefox, скриншоты делаются через **один постоянный headless
+Firefox**. Он управляется встроенным в Firefox протоколом WebDriver BiDi,
+ничего дополнительно не устанавливается. Каждая страница — новая вкладка в этом
+браузере, без перезапуска всего браузера.
 
-| ID                     | Jiddiylik | Yo'l              | Nima topadi                         |
-| ---------------------- | --------- | ----------------- | ----------------------------------- |
-| `spring-actuator-env`  | high      | `/actuator/env`   | Spring Boot muhit o'zgaruvchilari   |
-| `adminer`              | high      | `/adminer.php`    | Adminer DB paneli                   |
-| `env-backup`           | high      | `/.env.bak`       | Config backup fayli                 |
-| `sql-dump`             | high      | `/dump.sql`       | SQL dump fayli                      |
-| `spring-actuator`      | medium    | `/actuator`       | Spring Boot Actuator                |
-| `apache-server-status` | medium    | `/server-status`  | Apache `mod_status`                 |
-| `phpinfo`              | medium    | `/phpinfo.php`    | `phpinfo()` sahifasi                |
-| `go-pprof`             | medium    | `/debug/pprof/`   | Go pprof debug endpoint'i           |
-| `ds-store`             | low       | `/.DS_Store`      | macOS `.DS_Store` fayli             |
-| `swagger-api-docs`     | info      | `/swagger.json`   | Swagger/OpenAPI hujjati             |
-| `graphql-endpoint`     | info      | `/graphql`        | GraphQL endpoint'i                  |
-| `wordpress-login`      | info      | `/wp-login.php`   | WordPress                           |
+- **Правило ожидания страницы:** если страница полностью загрузилась (`load`),
+  снимок делается сразу. Если какой-то ресурс зависает (трекер, мёртвый CDN,
+  закрытый порт), через **3 секунды** после готовности DOM снимается то, что
+  уже нарисовано. Если за 15 секунд не появился даже DOM, страница считается
+  «не ответившей».
+- Сайты с **самоподписанным / неверным сертификатом** тоже снимаются (частый
+  случай среди целей разведки).
+- Собственная страница ошибки Firefox (DNS не найден, соединение отклонено,
+  ошибка TLS) не сохраняется как скриншот — в этом случае возвращается понятная
+  ошибка.
+- Браузер запускается при первом запросе (~1–1,5 с), закрывается после
+  **3 минут** простоя, при падении автоматически перезапускается и закрывается
+  вместе с сервером.
+- Если BiDi не работает (например, очень старый Firefox), в качестве резерва
+  используется прежний разовый способ `firefox --screenshot`.
 
-### O'z shabloningizni qo'shish
+Замеры (Firefox на этом компьютере, локальные страницы):
 
-Shablonlar `internal/scan/checks/` papkasidagi `.json` fayllardan olinadi
-(fayl ichida massiv yoki bitta obyekt bo'lishi mumkin). Har bir shablon jonli
-web host'ga **bitta GET so'rov** yuboradi va moslashtirgichlar o'tsa, topilma
-yaratadi:
+| Ситуация | Прежний способ (каждый раз новый браузер) | Сейчас |
+| -------- | ----------------------------------------- | ------ |
+| Обычная страница (браузер уже запущен) | 0,6–3 с | **~0,3 с** |
+| Страница с одним зависшим ресурсом | 30–40 с, **снимка нет** | **~3 с, снимок есть** |
+| Страница с медленной (8 с) картинкой | ~8,6 с | ~3 с |
+| Сайт с самоподписанным TLS | страница ошибки браузера | **~0,25 с, настоящая страница** |
+| 6 страниц параллельно | 6 отдельных браузеров | **~0,6 с суммарно, один браузер** |
+
+Для Chromium остаётся разовый способ, но с жёстким лимитом 10 секунд
+(`--timeout`): зависший ресурс не блокирует снимок.
+
+- **Хэш favicon** — хэш mmh3 в стиле Shodan, вычисляемый на чистом Go (с этим
+  хэшем в Shodan через `http.favicon.hash:<hash>` можно найти другие хосты с
+  тем же favicon).
+
+Если в системе установлен настоящий внешний `nuclei`, он тоже работает
+**дополнительно** (необязательно, по умолчанию выключен) — то есть добавляет
+полный набор шаблонов ProjectDiscovery поверх встроенных проверок.
+
+### Список встроенных шаблонов
+
+| ID                     | Серьёзность | Путь              | Что находит                         |
+| ---------------------- | ----------- | ----------------- | ----------------------------------- |
+| `spring-actuator-env`  | high        | `/actuator/env`   | Переменные окружения Spring Boot    |
+| `adminer`              | high        | `/adminer.php`    | Панель БД Adminer                   |
+| `env-backup`           | high        | `/.env.bak`       | Резервная копия конфига             |
+| `sql-dump`             | high        | `/dump.sql`       | Дамп SQL                            |
+| `spring-actuator`      | medium      | `/actuator`       | Spring Boot Actuator                |
+| `apache-server-status` | medium      | `/server-status`  | Apache `mod_status`                 |
+| `phpinfo`              | medium      | `/phpinfo.php`    | Страница `phpinfo()`                |
+| `go-pprof`             | medium      | `/debug/pprof/`   | Отладочный эндпоинт Go pprof        |
+| `ds-store`             | low         | `/.DS_Store`      | Файл macOS `.DS_Store`              |
+| `swagger-api-docs`     | info        | `/swagger.json`   | Документация Swagger/OpenAPI        |
+| `graphql-endpoint`     | info        | `/graphql`        | Эндпоинт GraphQL                    |
+| `wordpress-login`      | info        | `/wp-login.php`   | WordPress                           |
+
+### Добавление собственного шаблона
+
+Шаблоны берутся из файлов `.json` в папке `internal/scan/checks/` (в файле
+может быть массив или один объект). Каждый шаблон отправляет живому веб-хосту
+**один GET-запрос** и создаёт находку, если сопоставители сработали:
 
 ```json
 [
   {
     "id": "spring-actuator-env",
-    "name": "Spring Boot Actuator /env oshkor",
+    "name": "Открыт Spring Boot Actuator /env",
     "severity": "high",
     "path": "/actuator/env",
-    "desc": "Spring Boot /actuator/env endpoint'i ochiq — muhit o'zgaruvchilari oshkor bo'ladi.",
+    "desc": "Эндпоинт Spring Boot /actuator/env открыт — раскрываются переменные окружения, конфигурация, а иногда и секреты.",
     "matchers": [
       { "type": "status", "status": [200] },
       { "type": "word", "words": ["propertySources", "systemEnvironment"], "condition": "or", "part": "body" }
@@ -469,685 +488,688 @@ yaratadi:
 ]
 ```
 
-| Maydon                 | Ma'nosi                                                           |
+| Поле                   | Значение                                                          |
 | ---------------------- | ----------------------------------------------------------------- |
-| `id`, `name`, `desc`   | Identifikator, topilma sarlavhasi va tavsifi                      |
-| `severity`             | `info`, `low`, `medium` yoki `high`                               |
-| `path`                 | So'rov yuboriladigan yo'l                                         |
-| `condition`            | Moslashtirgichlar **orasida**: `and` (standart) yoki `or`         |
-| `matchers[].type`      | `status`, `word` yoki `regex`                                     |
-| `matchers[].status` / `words` / `regex` | Tekshiriladigan qiymatlar                        |
-| `matchers[].part`      | `body` (standart) yoki `header`                                   |
-| `matchers[].condition` | Bitta moslashtirgich **ichida**: `or` (standart) yoki `and`       |
-| `matchers[].negative`  | `true` — natijani teskari qiladi                                  |
+| `id`, `name`, `desc`   | Идентификатор, заголовок и описание находки                       |
+| `severity`             | `info`, `low`, `medium` или `high`                                |
+| `path`                 | Путь, по которому отправляется запрос                             |
+| `condition`            | **Между** сопоставителями: `and` (по умолчанию) или `or`          |
+| `matchers[].type`      | `status`, `word` или `regex`                                      |
+| `matchers[].status` / `words` / `regex` | Проверяемые значения                             |
+| `matchers[].part`      | `body` (по умолчанию) или `header`                                |
+| `matchers[].condition` | **Внутри** одного сопоставителя: `or` (по умолчанию) или `and`    |
+| `matchers[].negative`  | `true` — инвертирует результат                                    |
 
-Shablonlar `go:embed` orqali binary'ga joylanadi, shuning uchun yangi fayl
-qo'shgach **qayta qurish** kerak (`make web`). Faqat o'qiydigan va zararsiz
-tekshiruvlar qo'shing.
-
----
-
-## Veb-interfeys
-
-Interfeys haqiqiy pentest ish jarayoni uchun qurilgan:
-
-- **Uch ko'rinish** — grafdan **jadval**ga (saralanadigan, qidiriladigan) va
-  **skrinshot galereyasi**ga o'tish. Graf ustidagi qidiruv maydoni mos
-  kelmaydigan tugunlarni yashiradi, mos kelganlarini ajratib ko'rsatadi.
-- **Tugunlar bir-biriga tiqilmaydi** — graf qancha katta bo'lmasin, har bir
-  tugun va uning yozuvi alohida turadi. Joylashuv alohida thread'da (Web
-  Worker) hisoblanadi, shuning uchun sahifa muzlamaydi:
-  1. Faqat bitta qo'shnisi bor "barg" tugunlar (CVE'lar, fuzz yo'llari,
-     parametrlar, resolve bo'lmagan nomlar…) ota tuguni atrofida
-     **konsentrik halqalarga** joylashadi, yozuvlari kengligiga qarab.
-  2. Qolgan "yadro" graf **fCoSE** bilan joylashadi: avval spektral usul
-     global tuzilmani topadi, keyin kuchlar uni sayqallaydi. Har bir tugun o'z
-     halqasi uchun joyni oldindan band qiladi.
-  3. Oxirida tugunlar **yozuvi bilan birga** to'rtburchak deb olinib,
-     bir-biriga kirganlari markazlar chizig'i bo'ylab itarib ajratiladi.
-
-  O'lchov: sun'iy 3671 tugunli grafda ustma-ust tushgan tugun juftlari
-  3037 → **0**, yozuvlar 5879 → **0**; 631 tugunda 41/92 → **0/0**. Katta graf
-  ~20–30 soniyada joylashadi. Bu vaqtda footer'da "🧭 Graf
-  joylashtirilmoqda…" ko'rinadi va interfeys bilan ishlash mumkin. Graf
-  kattalashsa, uni yaqinlashtirib (zoom) ko'ring — yozuvlar kichik masshtabda
-  yashirinadi. "↻" tugmasi grafni noldan qayta joylashtiradi. Skan paytida
-  graf bosqichma-bosqich, mavjud joylashuvni saqlagan holda yangilanadi.
-  Skan tugagach esa butun graf bir marta noldan joylashtiriladi.
-- **Status kodi bo'yicha ranglar** — HTTP javob bergan har bir tugun o'z status
-  kodiga qarab bo'yaladi: **2xx** yashil · **3xx** ko'k · **401/403** binafsha
-  · **4xx** sariq · **5xx** qizil. Burchakdagi bosiladigan "legenda" har bir
-  sinfni ajratib ko'rsatadi. `401/403` va `5xx` — odatda eng qiziq joylar.
-- **Tafsilotlar paneli** — tugunni ikki marta bossangiz (yoki jadvaldan
-  tanlasangiz), uning barcha xususiyatlari chiqadi. URL tugunlari uchun sahifani
-  shu yerning o'zida qayta so'rab, status, sarlavhalar va xom HTML'ni ko'rish
-  mumkin.
-- **Sahifa skrinshoti panelda** — "🌐 Brauzerda ochish" va "📄 HTML ko'rish"
-  tugmalarining tagida o'sha sahifaning skrinshoti turadi. Rasmni bossangiz,
-  u to'liq o'lchamda ochiladi; "🔄 Yangilash" sahifani qayta suratga oladi.
-  - Saqlangan rasm bo'lsa, darhol ko'rsatiladi (nishonga so'rov ketmaydi).
-  - Rasm bo'lmasa va skan bu sahifaga allaqachon so'rov yuborgan bo'lsa
-    (statusi bor URL), skrinshot **avtomatik** olinadi (Firefox'da odatda
-    1 soniyadan kam, osilgan resursli sahifada ~3 soniya).
-  - Skan hech qachon so'rov yubormagan sahifalar (Wayback arxivi, sitemap, JS
-    ichidan topilganlar) avtomatik ochilmaydi — passiv skan passiv qolishi
-    uchun. Ular uchun "📸 Skrinshot olish" tugmasi chiqadi. Sozlamalarda
-    skrinshotlar o'chirilgan bo'lsa ham shunday.
-  - Host, port va topilma tugunlarida unga bog'langan sahifaning skrinshoti
-    ko'rsatiladi.
-  - Olingan rasm grafga ham yoziladi, shuning uchun galereyada va boshqa ochiq
-    tablarda ham ko'rinadi.
-- **Teglar va eslatmalar** — istalgan tugunni **Zaif / Tekshirildi / Qiziq /
-  False positive** deb belgilash va matnli eslatma qo'yish mumkin. Teg tugun
-  halqasini bo'yaydi; hammasi nishon bo'yicha saqlanadi va hisobotlarga tushadi.
-  Eslatma har doim **ekrandagi grafning nishoniga** yoziladi — kiritish
-  maydoniga boshqa nom yozib qo'ygan bo'lsangiz ham.
-- **To'xtatish** — "To'xtatish" bosilgach, tugma server skanni haqiqatan
-  tugatguncha "To'xtatilmoqda…" holatida qoladi. Shundan so'ng yangi skanni
-  darhol boshlash mumkin.
-- **"Keyingi qadam" o'quv rejimi** — har bir tugun uchun: *nega muhim*, *qo'lda
-  nimani tekshirish kerak*, *qaysi vositalar bilan* (o'zbekcha). Dizayni bo'yicha
-  faqat scope ichida sinashga undaydi.
-- **Scan tarixi va vizual diff** — har bir tugagan skan avtomatik saqlanadi.
-  Eski skanni qayta ochish yoki ikki skanni solishtirish mumkin: yangi
-  tugunlar yashil halqa, yo'qolganlari qizil uzuq halqa bilan ko'rinadi.
-- **Uzluksiz monitoring** — nishonni belgilangan oraliqda kuzatish; yangi
-  subdomen, port yoki topilma chiqsa, **Telegram** yoki **webhook** orqali
-  xabar keladi.
-- **Manbalar paneli** — joriy skandagi har bir manba qancha vaqt olgani,
-  holati (`running` / `done` / `error`) va nechta tugun/bog'lanish topgani.
+Шаблоны вшиваются в бинарник через `go:embed`, поэтому после добавления нового
+файла нужна **пересборка** (`make web`). Добавляйте только читающие и
+безвредные проверки.
 
 ---
 
-## CVE dvigateli
+## Веб-интерфейс
 
-Aniqlangan servis va versiyalar (nmap `-sV`, Shodan/Censys yoki web
-sarlavhalaridan) ma'lum zaifliklarga moslashtiriladi:
+Интерфейс построен для реальной работы пентестера:
 
-- **NVD (National Vulnerability Database)** — CPE orqali servis versiyasiga
-  mos CVE'larni topadi. NVD kaliti (ixtiyoriy) so'rov limitini oshiradi;
-  kalitsiz so'rovlar NVD limitiga mos ravishda sekinlashtiriladi.
-- **CISA KEV** — faol ekspluatatsiya qilinayotgan CVE'lar yorqin qizil halqa
-  bilan belgilanadi (eng yuqori ustuvorlik).
-- **EPSS** (FIRST.org) — har bir CVE uchun 30 kun ichida ekspluatatsiya
-  ehtimoli foizi.
-- **Lokal kesh** — natijalar sof-Go SQLite bazasida
-  (`~/.cache/osint-forge/cve.sqlite`) keshlanadi: NVD natijalari **7 kun**,
-  KEV ro'yxati **24 soat** yangi hisoblanadi. Shuning uchun takroriy skanlar
-  tezroq va NVD limitiga kamroq tegadi. Baza WAL rejimida va kutish vaqti
-  (busy timeout) bilan ochiladi, shuning uchun veb-server va `reconcli` uni
-  bir vaqtda xatosiz ishlata oladi.
-- **Shodan CVE'lari** — Shodan to'g'ridan-to'g'ri xabar qilgan CVE'lar ham KEV
-  belgisi va EPSS bali bilan boyitiladi.
+- **Три вида** — переключение с графа на **таблицу** (с сортировкой и поиском)
+  и **галерею скриншотов**. Поле поиска над графом скрывает неподходящие узлы и
+  подсвечивает подходящие.
+- **Узлы не налезают друг на друга** — каким бы большим ни был граф, каждый
+  узел и его подпись стоят отдельно. Раскладка считается в отдельном потоке
+  (Web Worker), поэтому страница не зависает:
+  1. «Листовые» узлы с единственным соседом (CVE, пути фаззинга, параметры,
+     неразрешённые имена…) располагаются **концентрическими кольцами** вокруг
+     родителя с учётом ширины подписей.
+  2. Оставшееся «ядро» графа раскладывается **fCoSE**: сначала спектральный
+     метод находит глобальную структуру, затем силы её уточняют. Каждый узел
+     заранее резервирует место под своё кольцо.
+  3. В конце узлы **вместе с подписями** рассматриваются как прямоугольники, и
+     пересекающиеся расталкиваются вдоль линии центров.
 
-Servis haqida ma'lumot juda kam bo'lsa (masalan, versiya aniqlanmagan), noto'g'ri
-mosliklar bilan grafni to'ldirmaslik uchun moslashtirish o'tkazib yuboriladi.
-
-Natijada siz "qaysi CVE eng avval e'tibor talab qiladi"ni og'irlik + KEV + EPSS
-bo'yicha ko'rasiz, shunchaki ro'yxat emas.
+  Замер: на синтетическом графе из 3671 узла пар перекрывающихся узлов
+  3037 → **0**, подписей 5879 → **0**; на 631 узле 41/92 → **0/0**. Большой граф
+  раскладывается за ~20–30 секунд. В это время в нижней панели видно
+  «🧭 Раскладка графа…», и с интерфейсом можно работать. Если граф большой,
+  приблизьте его (zoom) — при мелком масштабе подписи скрываются. Кнопка «↻»
+  раскладывает граф заново с нуля. Во время сканирования граф обновляется
+  постепенно, сохраняя текущую раскладку. После завершения сканирования весь
+  граф один раз раскладывается с нуля.
+- **Цвета по коду статуса** — каждый узел, ответивший по HTTP, окрашивается по
+  коду статуса: **2xx** зелёный · **3xx** синий · **401/403** фиолетовый ·
+  **4xx** жёлтый · **5xx** красный. Кликабельная «легенда» в углу подсвечивает
+  каждый класс. `401/403` и `5xx` — обычно самые интересные места.
+- **Панель подробностей** — двойной клик по узлу (или выбор в таблице)
+  показывает все его свойства. Для URL-узлов страницу можно запросить прямо
+  здесь и посмотреть статус, заголовки и сырой HTML.
+- **Скриншот страницы в панели** — под кнопками «🌐 Открыть в браузере» и
+  «📄 Показать HTML» находится скриншот этой страницы. Клик по снимку открывает
+  его в полном размере; «🔄 Обновить» снимает страницу заново.
+  - Если снимок уже сохранён, он показывается сразу (запрос к цели не уходит).
+  - Если снимка нет, а сканирование уже обращалось к этой странице (URL со
+    статусом), скриншот делается **автоматически** (в Firefox обычно меньше
+    секунды, на странице с зависшим ресурсом ~3 секунды).
+  - Страницы, к которым сканирование никогда не обращалось (найденные в архиве
+    Wayback, sitemap, JS), автоматически не открываются — чтобы пассивное
+    сканирование оставалось пассивным. Для них появляется кнопка «📸 Сделать
+    скриншот». То же самое, если скриншоты отключены в настройках.
+  - Для узлов хостов, портов и находок показывается скриншот связанной с ними
+    страницы.
+  - Полученный снимок записывается и в граф, поэтому виден в галерее и в других
+    открытых вкладках.
+- **Теги и заметки** — любой узел можно пометить как **Уязвимо / Проверено /
+  Интересно / Ложное** (ложное срабатывание) и добавить текстовую заметку. Тег
+  окрашивает обводку узла; всё сохраняется по цели и попадает в отчёты.
+  Заметка всегда записывается для **цели графа на экране** — даже если в поле
+  ввода вы уже написали другое имя.
+- **Остановка** — после нажатия «Остановить» кнопка остаётся в состоянии
+  «Остановка…», пока сервер действительно не завершит сканирование. После этого
+  можно сразу начать новое.
+- **Обучающий режим «Следующий шаг»** — для каждого узла: *почему это важно*,
+  *что проверить вручную*, *какими инструментами*. По замыслу подталкивает
+  проверять только в пределах scope.
+- **История сканирований и визуальное сравнение** — каждое завершённое
+  сканирование сохраняется автоматически. Старое сканирование можно открыть
+  снова или сравнить два сканирования: новые узлы видны с зелёной обводкой,
+  исчезнувшие — с красной пунктирной.
+- **Непрерывный мониторинг** — наблюдение за целью с заданным интервалом; при
+  появлении нового поддомена, порта или находки приходит уведомление в
+  **Telegram** или на **вебхук**.
+- **Панель источников** — сколько времени занял каждый источник текущего
+  сканирования, его состояние (`running` / `done` / `error`) и сколько
+  узлов/связей он нашёл; источники сгруппированы по этапам.
 
 ---
 
-## Hisobotlar va eksport
+## Движок CVE
 
-Eksport menyusidan (yoki CLI'da tegishli bayroqlar bilan) olti formatda:
+Обнаруженные сервисы и версии (nmap `-sV`, Shodan/Censys или веб-заголовки)
+сопоставляются с известными уязвимостями:
 
-| Format        | Nima uchun                                                       |
+- **NVD (National Vulnerability Database)** — находит CVE для версии сервиса
+  по CPE. Ключ NVD (необязательно) повышает лимит запросов; без ключа запросы
+  замедляются в соответствии с лимитом NVD.
+- **CISA KEV** — активно эксплуатируемые CVE помечаются ярко-красной обводкой
+  (высший приоритет).
+- **EPSS** (FIRST.org) — вероятность эксплуатации каждой CVE в ближайшие
+  30 дней, в процентах.
+- **Локальный кэш** — результаты кэшируются в базе SQLite на чистом Go
+  (`~/.cache/osint-forge/cve.sqlite`): результаты NVD считаются свежими
+  **7 дней**, список KEV — **24 часа**. Поэтому повторные сканирования быстрее и
+  меньше упираются в лимит NVD. База открывается в режиме WAL с таймаутом
+  ожидания (busy timeout), поэтому веб-сервер и `reconcli` могут без ошибок
+  работать с ней одновременно.
+- **CVE от Shodan** — CVE, о которых Shodan сообщает напрямую, тоже обогащаются
+  признаком KEV и оценкой EPSS.
+
+Если сведений о сервисе слишком мало (например, версия не определена),
+сопоставление пропускается, чтобы не заполнять граф ложными совпадениями.
+
+В итоге вы видите не просто список, а «какая CVE требует внимания в первую
+очередь» — по серьёзности + KEV + EPSS.
+
+---
+
+## Отчёты и экспорт
+
+Из меню «Экспорт» (или флагами в CLI) — в шести форматах. Все отчёты на русском:
+
+| Формат        | Для чего                                                        |
 | ------------- | --------------------------------------------------------------- |
-| **HTML**      | Mustaqil, chiroyli hisobot — brauzerda ochib ko'rsatish uchun.  |
-| **Markdown**  | Obsidian/Notion yoki Git repo uchun matnli hisobot.             |
-| **CSV**       | Topilmalar + CVE jadvali — Excel/skript uchun.                  |
-| **SARIF 2.1.0** | CI / kod-skanerlash panellari (GitHub Code Scanning) uchun. Har bir natijada joylashuv (ta'sirlangan URL/host) bor; har bir topilma turi — alohida qoida; CVE'lar CVSS bo'yicha `security-severity` oladi. |
-| **JSON**      | To'liq graf — boshqa vositaga uzatish uchun.                    |
-| **Obsidian vault (.zip)** | Har bir tugun — alohida, o'zaro bog'langan nota.   |
+| **HTML**      | Самостоятельный красивый отчёт — открыть и показать в браузере. |
+| **Markdown**  | Текстовый отчёт для Obsidian/Notion или Git-репозитория.        |
+| **CSV**       | Таблица находок + CVE — для Excel/скриптов.                     |
+| **SARIF 2.1.0** | Для CI и панелей сканирования кода (GitHub Code Scanning). У каждого результата есть расположение (затронутый URL/хост); каждый тип находки — отдельное правило; CVE получают `security-severity` по CVSS. |
+| **JSON**      | Полный граф — для передачи в другие инструменты.                |
+| **Хранилище Obsidian (.zip)** | Каждый узел — отдельная, связанная с другими заметка. |
 
-Qo'ygan **teglaringiz va eslatmalaringiz** HTML, Markdown, JSON, CSV va Obsidian
-hisobotlariga ham qo'shiladi — ya'ni hisobot sizning qo'lda qilgan tahlilingizni
-ham o'z ichiga oladi.
+Ваши **теги и заметки** тоже попадают в отчёты HTML, Markdown, JSON, CSV и
+Obsidian — то есть отчёт включает и ваш ручной анализ.
 
-Eksport har doim **joriy** grafdan olinadi. Eski skanning hisobotini olish
-uchun avval uni tarixdan oching. CLI hisobotlarida teg va eslatmalar bo'lmaydi —
-ular faqat veb-interfeys eksportiga qo'shiladi. HTML hisobot faqat `http(s)`
-havolalarni bosiladigan qiladi.
+Экспорт всегда делается из **текущего** графа. Чтобы получить отчёт по старому
+сканированию, сначала откройте его из истории. В отчётах CLI тегов и заметок
+нет — они добавляются только в экспорт из веб-интерфейса. HTML-отчёт делает
+кликабельными только ссылки `http(s)`.
 
 ---
 
-## Uzluksiz monitoring
+## Непрерывный мониторинг
 
-🔔 paneldan nishonni kuzatuvga qo'shasiz va oraliqni tanlaysiz (**5 daqiqa,
-1 soat, 6 soat, 12 soat yoki 1 kun**). Dastur fonda o'sha nishonni qayta
-skanlaydi va natijani oldingisi bilan solishtiradi. **O'zgarish bo'lsa**
-(yangi subdomen/port/topilma yoki yo'qolgan narsa) — Telegram yoki webhook
-orqali qisqa xabar yuboradi:
+В панели 🔔 вы добавляете цель под наблюдение и выбираете интервал (**5 минут,
+1 час, 6 часов, 12 часов или 1 день**). Программа в фоне пересканирует цель и
+сравнивает результат с предыдущим. **Если есть изменения** (новый
+поддомен/порт/находка или что-то исчезло) — отправляет короткое сообщение в
+Telegram или на вебхук:
 
 ```
-🕸️ osint-forge — example.com da o'zgarish
-+2 yangi, −1 yo'qolgan
+🕸️ osint-forge — изменения на example.com
++2 новых, −1 исчезло
 ➕ subdomain: new.example.com
 ➕ port: 8080/tcp
 ➖ url: http://example.com/old
 ```
 
-Sozlash: Sozlamalar → "Bildirishnomalar" bo'limida Telegram bot token va chat
-ID (yoki webhook URL) kiriting. "✈ Test xabar" tugmasi bilan tekshiring.
+Настройка: Настройки → раздел «Уведомления (мониторинг)» — введите токен
+Telegram-бота и ID чата (или URL вебхука). Проверьте кнопкой «✈ Тестовое
+сообщение».
 
-### Xabar filtri
+### Фильтр уведомлений
 
-Har bir kuzatuvda **qaysi o'zgarishlar xabar yuborishini** tanlaysiz
-("Xabar" maydoni). Shunda Telegram yangi arxiv URL yoki texnologiya kabi
-ahamiyatsiz o'zgarishlar bilan to'lib ketmaydi:
+Для каждого наблюдения вы выбираете, **какие изменения вызывают уведомление**
+(поле «Уведомлять»). Так Telegram не засыпается неважными изменениями вроде
+новых архивных URL или технологий:
 
-| Tanlov | Nima haqida xabar keladi |
-| ------ | ------------------------ |
-| **Muhim o'zgarishlar** *(standart)* | Yangi/yo'qolgan subdomen, IP, ochiq port, servis, sertifikat, CVE va topilmalar. URL, parametr, texnologiya, email kabi "shovqin" kirmaydi. |
-| **Faqat xavfli** | Faqat **high/critical** topilmalar va CVE'lar (CISA KEV'dagi CVE har doim critical hisoblanadi) hamda yangi ochiq portlar; faqat yangilar. |
-| **Hamma o'zgarishlar** | Grafdagi har qanday o'zgarish (oldingi xatti-harakat). |
-| **O'zim tanlayman…** | Turlarni belgilaysiz (subdomen, IP, port, servis, topilma, CVE, sertifikat, URL, parametr, texnologiya, email, ASN/WHOIS), topilma/CVE uchun **minimal jiddiylikni** tanlaysiz va xohlasangiz **faqat yangilar** haqida xabar olasiz. |
+| Вариант | О чём приходит уведомление |
+| ------- | -------------------------- |
+| **Важные изменения** *(по умолчанию)* | Новые/исчезнувшие поддомены, IP, открытые порты, сервисы, сертификаты, CVE и находки. «Шум» вроде URL, параметров, технологий и email не учитывается. |
+| **Только опасное** | Только находки и CVE уровня **high/critical** (CVE из CISA KEV всегда считается critical) и новые открытые порты; только новые. |
+| **Все изменения** | Любые изменения в графе (прежнее поведение). |
+| **Выбрать вручную…** | Отмечаете типы (поддомены, IP, порты, сервисы, находки, CVE, сертификаты, URL, параметры, технологии, email, ASN/WHOIS), выбираете **минимальную серьёзность** для находок/CVE и при желании получаете уведомления **только о новых**. |
 
-- Ro'yxatda har bir kuzatuv tagida uning filtri qisqacha ko'rinadi (🔎).
-  **✏️** tugmasi kuzatuvni formaga qaytaradi: oraliq va filtrni o'zgartirib,
-  "Saqlash" bosilsa, o'sha kuzatuv yangilanadi (dublikat yaratilmaydi).
-- O'zgarish bo'lsa-yu, hech biri filtrga mos kelmasa, xabar yuborilmaydi.
-  Panelda esa "+N / −M o'zgarish bor, lekin filtrga mos emas" deb yoziladi.
-- Xabarda faqat filtrdan o'tgan o'zgarishlar sanaladi va ko'rsatiladi.
-- Filtrsiz yaratilgan eski kuzatuvlar avvalgidek hamma o'zgarishlar haqida
-  xabar beradi.
+- В списке под каждым наблюдением кратко показан его фильтр (🔎). Кнопка
+  **✏️** возвращает наблюдение в форму: измените интервал и фильтр и нажмите
+  «Сохранить» — это наблюдение обновится (дубль не создаётся).
+- Если изменения есть, но ни одно не проходит фильтр, уведомление не
+  отправляется. В панели пишется «есть изменения (+N / −M), но они не проходят
+  фильтр».
+- В уведомлении считаются и показываются только изменения, прошедшие фильтр.
+- Старые наблюдения, созданные без фильтра, как и раньше сообщают обо всех
+  изменениях.
 
-Telegram bot: [@BotFather](https://t.me/BotFather) orqali bot yaratasiz, chat
-ID ni esa [@userinfobot](https://t.me/userinfobot) beradi.
+Telegram-бот: создайте бота через [@BotFather](https://t.me/BotFather), ID
+чата выдаст [@userinfobot](https://t.me/userinfobot).
 
-**Qanday ishlaydi:**
+**Как это работает:**
 
-- Kuzatuvlar `~/.config/osint-forge/monitor.json` ga saqlanadi va server qayta
-  ishga tushganda tiklanadi.
-- Rejalashtirgich har daqiqada tekshiradi. Birinchi monitoring skani kuzatuv
-  qo'shilgandan keyin **bir oraliq o'tgach** boshlanadi. API orqali istalgan
-  oraliqni berish mumkin, lekin u kamida 5 daqiqa bo'ladi.
-- Bir vaqtda bitta skan: boshqa skan ketayotgan bo'lsa, navbatdagi kuzatuv
-  keyingi daqiqada qayta uriniladi (jadvali bir oraliqqa surilib ketmaydi).
-- Kuzatuvga qo'shishda ruxsat (consent) belgilansa, monitoring **aktiv** skan
-  qiladi; aks holda faqat passiv manbalar ishlaydi.
-- Yangi skan nishonning tarixdagi **oxirgi** skani bilan taqqoslanadi (qo'lda
-  qilingan skanlar ham hisobga kiradi). O'zgarish bo'lmasa, xabar yuborilmaydi —
-  panelda "o'zgarishsiz" yoziladi.
-- To'xtatilgan yoki vaqt byudjetiga sig'magan monitoring skani **saqlanmaydi va
-  taqqoslanmaydi** — aks holda u ko'ra olmagan hamma narsa "yo'qolgan" bo'lib
-  yolg'on xabar ketardi. Panelda "skan to'liq tugamadi" yoziladi.
-- Xabarda 15 tagacha yangi va jami 25 tagacha qator bo'ladi (Telegram'da
-  4000 belgidan uzun xabar qisqartiriladi).
-- Xabar yuborilmasa, sababi panelda ko'rinadi (Telegram'ning izohi bilan,
-  masalan "chat not found"). Xato matnlarida bot tokeni va webhook yo'li
-  hech qachon ko'rsatilmaydi.
-- **Webhook formati:** `POST` so'rov, `Content-Type: application/json`, tana
-  `{"text": "…xabar…"}`. Bu Slack va Mattermost "incoming webhook"lari bilan
-  to'g'ridan-to'g'ri mos keladi. Discord `content` maydonini kutadi, shuning
-  uchun u uchun oraliq adapter kerak.
+- Наблюдения сохраняются в `~/.config/osint-forge/monitor.json` и
+  восстанавливаются после перезапуска сервера.
+- Планировщик проверяет раз в минуту. Первое сканирование мониторинга
+  начинается **через один интервал** после добавления наблюдения. Через API
+  можно задать любой интервал, но не меньше 5 минут.
+- Одновременно одно сканирование: если идёт другое, очередное наблюдение
+  повторяется в следующую минуту (расписание не сдвигается на интервал).
+- Если при добавлении отмечено согласие, мониторинг выполняет **активное**
+  сканирование; иначе работают только пассивные источники.
+- Новое сканирование сравнивается с **последним** сканированием цели в истории
+  (ручные сканирования тоже учитываются). Если изменений нет, уведомление не
+  отправляется — в панели пишется «без изменений».
+- Остановленное или не уложившееся в лимит времени сканирование мониторинга
+  **не сохраняется и не сравнивается** — иначе всё, что оно не успело увидеть,
+  «исчезло» бы, и ушло бы ложное уведомление. В панели пишется «сканирование не
+  завершилось полностью».
+- В уведомлении до 15 новых и всего до 25 строк (в Telegram сообщение длиннее
+  4000 символов обрезается).
+- Если уведомление не отправилось, причина видна в панели (с пояснением
+  Telegram, например «chat not found»). Токен бота и путь вебхука никогда не
+  показываются в текстах ошибок.
+- **Формат вебхука:** запрос `POST`, `Content-Type: application/json`, тело
+  `{"text": "…сообщение…"}`. Это напрямую совместимо с «incoming webhook»
+  Slack и Mattermost. Discord ожидает поле `content`, поэтому для него нужен
+  промежуточный адаптер.
 
-**Bilish kerak:** monitoring skani oddiy skan kabi ishlaydi — u barcha ochiq
-tablarda **joriy grafni almashtiradi** (ekranda qisqa "Monitoring skani
-boshlandi" xabari chiqadi).
+**Важно знать:** сканирование мониторинга работает как обычное — во всех
+открытых вкладках оно **заменяет текущий граф** (на экране появляется короткое
+сообщение «Запущено сканирование мониторинга»).
 
 ---
 
-## Xavfsizlik modeli
+## Модель безопасности
 
-osint-forge "fail-safe" (xato bo'lsa xavfsiz tomonga) tamoyili bilan qurilgan:
+osint-forge построен по принципу «fail-safe» (при ошибке — в безопасную
+сторону):
 
-- **Qamrov qo'riqchisi (`scope_strict`, standart yoqilgan)** — aktiv so'rovlar
-  faqat nishonning asosiy domeni, uning subdomenlari va **nishonning o'z
-  IP'lari**ga tegadi (qoida pastda). Reverse-IP, umumiy hosting, sertifikat
-  SAN'lari, MX/NS yozuvlari keltirib chiqargan begona hostlar **hech qachon**
-  aktiv skanlanmaydi — ular boshqa tashkilotniki. Qo'shimcha domen/CIDR'larni
-  `extra_scope` orqali qo'shish mumkin. Qamrov HTTP redirect'lariga ham
-  tatbiq etiladi.
-- **Ruxsat darvozasi (consent)** — butun aktiv manbalar to'plami siz
-  avtorizatsiyani tasdiqlamaguningizcha umuman ishga tushmaydi (interfeysda
-  belgilash, CLI'da `-active`).
-- **Nishon validatsiyasi** — noto'g'ri kiritilgan nishon (`!!!`, TLD'siz so'z,
-  buzuq domen) rad etiladi, bekorchi skan boshlanmaydi.
-- **Skan byudjeti (`scan_timeout_min`)** — umumiy qattiq vaqt chegarasi; skan
-  hech qachon cheksiz ishlamaydi.
-- **So'rov tezligi (`rate_limit_per_host`)** — fuzzing/brute-force host'ga
-  sekundiga nechta so'rov yuborishini cheklaydi (standart 40), DoS'ga
-  o'xshamaslik uchun.
-- **CSRF himoyasi** — API cross-origin/cross-site so'rovlarni (`Origin` va
-  `Sec-Fetch-Site` sarlavhalari bo'yicha) rad etadi; brauzeringizda ochiq
-  begona sayt serverni boshqara olmaydi. Javoblar `X-Frame-Options: DENY` va
-  `X-Content-Type-Options: nosniff` bilan yuboriladi.
-- **Fayl yo'li himoyasi** — skrinshot endpoint'i faqat skrinshot papkasidagi
-  fayllarni beradi, tarix ID'lari faqat raqamdan iborat bo'lishi tekshiriladi
-  (path traversal'ga yo'l yo'q).
-- **Maxfiy ma'lumotlar** — `config.json` (API kalitlari), eslatmalar va
-  `monitor.json` faqat egasi o'qiy oladigan `0600` huquq bilan atomik yoziladi.
-  URL'dagi API kalitlari (Shodan), Telegram bot tokeni va webhook yo'llari xato
-  xabarlari va loglarga hech qachon tushmaydi.
-- **Brauzer sandbox'i** — skrinshot uchun Chromium renderer sandbox'i yoqilgan
-  holda ishlaydi (faqat root'da o'chiriladi).
-- **Sozlamalar validatsiyasi** — formadan kelgan qiymatlar tozalanadi va
-  cheklanadi (`max_concurrent` 1–256, manfiy sonlar 0 ga, bo'sh User-Agent
-  standartga), shunda noto'g'ri qiymat yuz minglab ulanish ochib yubormaydi.
-- **Faqat lokal** — server standart holatda faqat `127.0.0.1` da tinglaydi.
+- **Защита области (`scope_strict`, включена по умолчанию)** — активные запросы
+  касаются только основного домена цели, его поддоменов и **собственных IP
+  цели** (правило ниже). Чужие хосты, появившиеся из reverse-IP, общего
+  хостинга, SAN сертификатов, записей MX/NS, **никогда** не сканируются
+  активно — они принадлежат другим организациям. Дополнительные домены/CIDR
+  можно добавить через `extra_scope`. Область применяется и к HTTP-редиректам.
+- **Барьер согласия (consent)** — весь набор активных источников не запускается
+  вовсе, пока вы не подтвердите авторизацию (галочка в интерфейсе, `-active` в
+  CLI).
+- **Проверка цели** — некорректная цель (`!!!`, слово без TLD, сломанный домен)
+  отклоняется, бессмысленное сканирование не запускается.
+- **Лимит сканирования (`scan_timeout_min`)** — общий жёсткий лимит времени;
+  сканирование никогда не работает бесконечно.
+- **Скорость запросов (`rate_limit_per_host`)** — ограничивает число запросов в
+  секунду на хост при фаззинге/переборе (по умолчанию 40), чтобы это не было
+  похоже на DoS.
+- **Защита от CSRF** — API отклоняет кросс-доменные/межсайтовые запросы (по
+  заголовкам `Origin` и `Sec-Fetch-Site`); открытый в браузере чужой сайт не
+  может управлять сервером. Ответы отправляются с `X-Frame-Options: DENY` и
+  `X-Content-Type-Options: nosniff`.
+- **Защита путей к файлам** — эндпоинт скриншотов отдаёт только файлы из папки
+  скриншотов, ID истории проверяются на то, что состоят только из цифр
+  (path traversal невозможен).
+- **Секретные данные** — `config.json` (ключи API), заметки и `monitor.json`
+  записываются атомарно с правами `0600` (читает только владелец). Ключи API в
+  URL (Shodan), токен Telegram-бота и пути вебхуков никогда не попадают в
+  сообщения об ошибках и журнал.
+- **Песочница браузера** — для скриншотов Chromium работает с включённой
+  песочницей рендерера (отключается только под root).
+- **Проверка настроек** — значения из формы очищаются и ограничиваются
+  (`max_concurrent` 1–256, отрицательные числа → 0, пустой User-Agent → по
+  умолчанию), чтобы неверное значение не открыло сотни тысяч соединений.
+- **Только локально** — по умолчанию сервер слушает только `127.0.0.1`.
 
-> **Qamrov qanday hisoblanadi:**
+> **Как определяется область:**
 >
-> - **Host nomlari** — **ro'yxatdan o'tgan domen** (eTLD+1) bo'yicha. Ya'ni
->   `api.example.com` ni kiritsangiz, aktiv skan butun `*.example.com` ga
->   ruxsat oladi — agar sizga faqat bitta subdomen ruxsat etilgan bo'lsa, buni
->   hisobga oling.
-> - **IP manzillar** — faqat (1) nishonning o'zi bo'lgan IP, (2) `extra_scope`
->   dagi CIDR ichidagi IP, yoki (3) shu skan davomida **qamrovdagi host nomi
->   jonli DNS orqali resolve qilingan** IP. Domenning MX/NS/CNAME serverlari
->   ham resolve qilinadi va grafda ko'rinadi, lekin ular qamrovdagi nom
->   bo'lmagani uchun ularning IP'lari aktiv skanlanmaydi. Passiv DNS (OTX)
->   bergan **tarixiy** IP'lar ham skanlanmaydi — ular hozir boshqaning
->   serveri bo'lishi mumkin. nmap/port-skan loglarida "N IP qamrovdan
->   tashqarida" deb yoziladi.
+> - **Имена хостов** — по **зарегистрированному домену** (eTLD+1). То есть если
+>   ввести `api.example.com`, активное сканирование получит разрешение на весь
+>   `*.example.com` — учитывайте это, если вам разрешён только один поддомен.
+> - **IP-адреса** — только (1) IP, который сам является целью, (2) IP внутри
+>   CIDR из `extra_scope`, или (3) IP, в который **имя из области разрешилось
+>   через живой DNS** в этом сканировании. Серверы MX/NS/CNAME домена тоже
+>   разрешаются и видны на графе, но поскольку это не имена из области, их IP
+>   активно не сканируются. **Исторические** IP из пассивного DNS (OTX) тоже не
+>   сканируются — сейчас это может быть чужой сервер. В журнале nmap/сканера
+>   портов пишется «N IP вне области».
 
-> **Diqqat:** `-addr 0.0.0.0:8081` bilan ishga tushirsangiz, server tarmoqqa
-> ochiladi va **login yo'q** — tarmoqdagi istalgan odam sizning nomingizdan
-> skan boshlay oladi va API kalitlaringizni o'qiy oladi. Buni faqat ishonchli,
-> yakka tarmoqda qiling.
+> **Внимание:** при запуске с `-addr 0.0.0.0:8081` сервер открывается в сеть, и
+> **авторизации нет** — любой в сети сможет запускать сканирования от вашего
+> имени и читать ваши ключи API. Делайте так только в доверенной изолированной
+> сети.
 
 ---
 
-## Sozlamalar va API kalitlar
+## Настройки и ключи API
 
-Sozlamalarni interfeysning ⚙ panelidan yoki to'g'ridan-to'g'ri diskdagi
-`config.json` fayldan tahrirlash mumkin. Barcha kalitlar interfeysda bor
-(qo'shimcha scope — har qatorda bitta; o'z so'z ro'yxatingiz — "O'z faylim…"
-tanlovi orqali). Saqlashda qiymatlar tozalanadi va cheklanadi.
+Настройки редактируются в панели ⚙ интерфейса или прямо в файле `config.json`
+на диске. Все ключи доступны в интерфейсе (дополнительная область — по одной
+записи в строке; свой словарь — через вариант «Свой файл…»). При сохранении
+значения очищаются и ограничиваются.
 
-| Kalit                      | Standart                    | Ma'nosi                                          |
+| Ключ                       | По умолчанию                | Значение                                         |
 | -------------------------- | --------------------------- | ------------------------------------------------ |
-| `nmap_args`                | `-sV -T4 --top-ports 1000`  | Qo'shimcha nmap bayroqlari                       |
-| `http_user_agent`          | `osint-forge/0.1 (+recon)`  | HTTP so'rovlardagi User-Agent                    |
-| `max_concurrent`           | `16`                        | Parallel ishchilar soni (1–256)                  |
-| `fuzz_enabled`             | `true`                      | Yo'l fuzzing                                     |
-| `fuzz_wordlist`            | `common`                    | Fuzzing so'z ro'yxati (pastga qarang)            |
-| `subdomain_bruteforce`     | `true`                      | DNS subdomain brute-force (5000 nom)             |
-| `zone_transfer`            | `true`                      | AXFR sinovi (faqat aktiv rejimda)                |
-| `status_codes`             | `2xx,3xx,401,403,405,5xx`   | Qaysi HTTP status kodlarini yozish (pastga qarang) |
-| `scan_timeout_min`         | `30`                        | Skan vaqt chegarasi (daqiqa, 0 = cheksiz)        |
-| `scope_strict`             | `true`                      | Qamrov qo'riqchisi                               |
-| `extra_scope`              | `[]`                        | Qo'shimcha domen va CIDR'lar (`10.0.0.0/8`)      |
-| `rate_limit_per_host`      | `0` (= 40 so'rov/s)         | Host uchun sekundiga maksimal so'rov             |
-| `builtin_checks`           | `true`                      | Ichki shablonli tekshiruvlar                     |
-| `screenshots`              | `true`                      | Skrinshotlar                                     |
-| `favicon_hash`             | `true`                      | Favicon hash                                     |
-| `nuclei`                   | `false`                     | Tashqi nuclei'ni ham ishlatish                   |
-| `telegram_token` / `telegram_chat_id` / `webhook_url` | – | Monitoring bildirishnomalari                   |
-| `nvd_key`                  | –                           | NVD API kaliti (CVE limitini oshiradi)           |
-| `shodan_key`               | –                           | Shodan API kaliti                                |
-| `censys_id` / `censys_secret` | –                        | Censys Search v2 ma'lumotlari                    |
-| `securitytrails_key` / `virustotal_key` | –              | Reverse-IP manbalari                             |
-| `hibp_key`                 | –                           | Have I Been Pwned kaliti                         |
-| `github_token`             | –                           | GitHub kod qidiruvi tokeni                       |
+| `nmap_args`                | `-sV -T4 --top-ports 1000`  | Дополнительные флаги nmap                        |
+| `http_user_agent`          | `osint-forge/0.1 (+recon)`  | User-Agent в HTTP-запросах                       |
+| `max_concurrent`           | `16`                        | Число параллельных воркеров (1–256)              |
+| `fuzz_enabled`             | `true`                      | Фаззинг путей                                    |
+| `fuzz_wordlist`            | `common`                    | Словарь для фаззинга (см. ниже)                  |
+| `subdomain_bruteforce`     | `true`                      | Перебор поддоменов через DNS (5000 имён)         |
+| `zone_transfer`            | `true`                      | Проверка AXFR (только в активном режиме)         |
+| `status_codes`             | `2xx,3xx,401,403,405,5xx`   | Какие коды HTTP-статуса записывать (см. ниже)    |
+| `scan_timeout_min`         | `30`                        | Лимит времени сканирования (мин., 0 = без ограничения) |
+| `scope_strict`             | `true`                      | Защита области                                   |
+| `extra_scope`              | `[]`                        | Дополнительные домены и CIDR (`10.0.0.0/8`)      |
+| `rate_limit_per_host`      | `0` (= 40 запросов/с)       | Максимум запросов в секунду на хост              |
+| `builtin_checks`           | `true`                      | Встроенные проверки по шаблонам                  |
+| `screenshots`              | `true`                      | Скриншоты                                        |
+| `favicon_hash`             | `true`                      | Хэш favicon                                      |
+| `nuclei`                   | `false`                     | Также запускать внешний nuclei                   |
+| `telegram_token` / `telegram_chat_id` / `webhook_url` | – | Уведомления мониторинга                        |
+| `nvd_key`                  | –                           | Ключ NVD API (повышает лимит CVE)                |
+| `shodan_key`               | –                           | Ключ Shodan API                                  |
+| `censys_id` / `censys_secret` | –                        | Учётные данные Censys Search v2                  |
+| `securitytrails_key` / `virustotal_key` | –              | Источники reverse-IP                             |
+| `hibp_key`                 | –                           | Ключ Have I Been Pwned                           |
+| `github_token`             | –                           | Токен для поиска по коду GitHub                  |
 
-Kalitlar **ixtiyoriy** — ularsiz dastur ishlaydi, shunchaki o'sha kalitga
-bog'liq manba o'tkazib yuboriladi.
+Ключи **необязательны** — без них программа работает, просто зависящий от
+ключа источник пропускается.
 
-**`fuzz_wordlist` qiymatlari:**
+**Значения `fuzz_wordlist`:**
 
-| Qiymat               | Ro'yxat                                                   |
+| Значение             | Словарь                                                  |
 | -------------------- | -------------------------------------------------------- |
-| `common`             | SecLists `common.txt` (~4 750 yo'l)                      |
-| `raft-directories`   | SecLists `raft-medium-directories.txt` (~30 000 yo'l)    |
-| `raft-files`         | SecLists `raft-medium-files.txt` (~17 000 yo'l)          |
-| `combo`              | Ikkala raft ro'yxati birga, takrorlarsiz                 |
-| `/yo'l/ro'yxat.txt`  | O'zingizning faylingiz: har qatorda bitta yo'l, `#` bilan boshlangan qator — izoh. Fayl o'qilmasa, `common` ishlatiladi. |
+| `common`             | SecLists `common.txt` (~4 750 путей)                     |
+| `raft-directories`   | SecLists `raft-medium-directories.txt` (~30 000 путей)   |
+| `raft-files`         | SecLists `raft-medium-files.txt` (~17 000 путей)         |
+| `combo`              | Оба словаря raft вместе, без повторов                    |
+| `/путь/словарь.txt`  | Ваш собственный файл: по одному пути в строке, строка с `#` — комментарий. Если файл не читается, используется `common`. |
 
-**`status_codes` sintaksisi:** vergul bilan ajratilgan ro'yxat — aniq kod
-(`200`), oraliq (`200-299`) yoki sinf (`2xx`). Bo'sh qiymat — barcha kodlar.
-Standart qiymat 404 javoblarni chiqarib tashlaydi.
+**Синтаксис `status_codes`:** список через запятую — точный код (`200`),
+диапазон (`200-299`) или класс (`2xx`). Пустое значение — все коды. Значение по
+умолчанию исключает ответы 404.
 
-> Config fayli eski versiyada yozilgan bo'lsa va unda yangi ichki imkoniyatlar
-> (`builtin_checks`, `screenshots`, `favicon_hash`) kaliti bo'lmasa, ular
-> o'chib qolmaydi — standart qiymat (yoqilgan) saqlanadi.
+> Если конфиг записан старой версией и в нём нет ключей новых встроенных
+> возможностей (`builtin_checks`, `screenshots`, `favicon_hash`), они не
+> выключаются — сохраняется значение по умолчанию (включено).
 
 ---
 
-## Ma'lumotlar qayerda saqlanadi
+## Где хранятся данные
 
-Hamma narsa sizning kompyuteringizda, standart OS papkalarida saqlanadi
-(Linux misolida; `XDG_CONFIG_HOME` / `XDG_CACHE_HOME` hisobga olinadi):
+Всё хранится на вашем компьютере в стандартных папках ОС (на примере Linux;
+учитываются `XDG_CONFIG_HOME` / `XDG_CACHE_HOME`):
 
-| Nima                 | Yo'l                                                     |
+| Что                  | Путь                                                     |
 | -------------------- | -------------------------------------------------------- |
-| Sozlamalar           | `~/.config/osint-forge/config.json`                      |
-| Teglar/eslatmalar    | `~/.config/osint-forge/notes/<nishon>.json`              |
-| Monitoring kuzatuvlari | `~/.config/osint-forge/monitor.json`                   |
-| Scan tarixi          | `~/.cache/osint-forge/history/<nishon>/<unix-nano>.json` (+ haqiqiy nishon nomi `.target` faylida) |
-| Skrinshotlar         | `~/.cache/osint-forge/screenshots/`                      |
-| CVE keshi (SQLite)   | `~/.cache/osint-forge/cve.sqlite` (+ `-wal`/`-shm` fayllari) |
+| Настройки            | `~/.config/osint-forge/config.json`                      |
+| Теги/заметки         | `~/.config/osint-forge/notes/<цель>.json`                |
+| Наблюдения мониторинга | `~/.config/osint-forge/monitor.json`                   |
+| История сканирований | `~/.cache/osint-forge/history/<цель>/<unix-nano>.json` (+ настоящее имя цели в файле `.target`) |
+| Скриншоты            | `~/.cache/osint-forge/screenshots/`                      |
+| Кэш CVE (SQLite)     | `~/.cache/osint-forge/cve.sqlite` (+ файлы `-wal`/`-shm`) |
 
-macOS'da `~/.config` o'rniga `~/Library/Application Support`, `~/.cache`
-o'rniga `~/Library/Caches`; Windows'da mos ravishda `%AppData%` va
-`%LocalAppData%` ishlatiladi.
+В macOS вместо `~/.config` используется `~/Library/Application Support`,
+вместо `~/.cache` — `~/Library/Caches`; в Windows — соответственно `%AppData%`
+и `%LocalAppData%`.
 
-- **Tarix o'z-o'zidan cheksiz o'smaydi:** yangi skan oldingisi bilan aynan bir
-  xil tugunlardan iborat bo'lsa, eski nusxa yangisi bilan almashtiriladi
-  (shuning uchun tez-tez ishlaydigan monitoring diskni to'ldirmaydi). Har bir
-  nishon uchun eng ko'pi **200** ta skan saqlanadi, eng eskilari avtomatik
-  o'chiriladi. Keraksizlarini tarix panelidan ham o'chirish mumkin; nishonning
-  oxirgi skani o'chirilsa, nishon ro'yxatdan ham chiqadi.
-- Tarixni ko'rish (ro'yxat, diff) hech qachon bo'sh papka yaratmaydi.
-  IPv6 nishonlar ham tarixdan to'g'ri nomi bilan ochiladi.
-- Server ishga tushganda eng oxirgi skanlangan nishonning oxirgi skani
-  avtomatik ochiladi.
-- Butun holatni nolga qaytarish uchun yuqoridagi `osint-forge` papkalarini
-  o'chirish kifoya.
+- **История не растёт бесконечно:** если новое сканирование состоит ровно из
+  тех же узлов, что и предыдущее, старая копия заменяется новой (поэтому
+  частый мониторинг не забивает диск). Для каждой цели хранится не более
+  **200** сканирований, самые старые удаляются автоматически. Ненужные можно
+  удалить и из панели истории; если удалить последнее сканирование цели, цель
+  пропадает из списка.
+- Просмотр истории (список, сравнение) никогда не создаёт пустых папок. Цели
+  IPv6 тоже открываются из истории под правильным именем.
+- При запуске сервера автоматически открывается последнее сканирование
+  последней просканированной цели.
+- Чтобы сбросить всё состояние, достаточно удалить указанные выше папки
+  `osint-forge`.
 
-Hech qanday ma'lumot tashqi serverga yuborilmaydi (API kaliti bilan siz
-yoqqan manbalar va monitoring bildirishnomalaridan tashqari).
+Никакие данные не отправляются на внешние серверы (кроме источников с ключами
+API, которые вы включили, и уведомлений мониторинга).
 
 ---
 
-## Buyruq qatori (CLI)
+## Командная строка (CLI)
 
-Grafik interfeyssiz, avtomatlashtirish va CI uchun `reconcli` xuddi shu
-dvigateldan va xuddi shu manbalar to'plamidan foydalanadi:
+Для автоматизации и CI без графического интерфейса `reconcli` использует тот же
+движок и тот же набор источников:
 
 ```sh
 make cli                                  # build/bin/reconcli
 
-reconcli example.com                      # faqat passiv OSINT
-reconcli -active example.com              # + aktiv skan (faqat ruxsatli nishon!)
-reconcli -active -diff example.com        # skanni saqlab, o'zgarishlarni chiqaradi
-reconcli -active -html rep.html example.com   # HTML hisobot yozadi
-reconcli -obsidian ./vault example.com    # Obsidian vault'ga eksport
-reconcli -quiet -sarif out.sarif -json out.json example.com   # CI uchun
+reconcli example.com                      # только пассивный OSINT
+reconcli -active example.com              # + активное сканирование (только для разрешённых целей!)
+reconcli -active -diff example.com        # сохранить сканирование и вывести изменения
+reconcli -active -html rep.html example.com   # записать HTML-отчёт
+reconcli -obsidian ./vault example.com    # экспорт в хранилище Obsidian
+reconcli -quiet -sarif out.sarif -json out.json example.com   # для CI
 ```
 
-| Bayroq            | Ma'nosi                                                     |
+| Флаг              | Значение                                                   |
 | ----------------- | ---------------------------------------------------------- |
-| `-active`         | Aktiv skanni ham ishga tushiradi (faqat ruxsatli nishon)  |
-| `-quiet`          | Har bir tugun chiqishini bostiradi                         |
-| `-timeout 30m`    | Umumiy skan byudjeti (0 = config'dan)                     |
-| `-no-scope`       | Qamrov qo'riqchisini o'chiradi (**XAVFLI**)               |
-| `-diff`           | Skanni saqlab, oldingisiga nisbatan o'zgarishni bosib chiqaradi |
-| `-json` / `-md` / `-csv` / `-sarif` / `-html` `FAYL` | Tegishli formatda hisobot yozadi |
-| `-obsidian DIR`   | Obsidian vault'ni shu papkaga yozadi                      |
+| `-active`         | Также запустить активное сканирование (только для разрешённых целей) |
+| `-quiet`          | Не выводить каждый найденный узел                          |
+| `-timeout 30m`    | Общий лимит времени сканирования (0 = из настроек)         |
+| `-no-scope`       | Отключить защиту области (**ОПАСНО**)                      |
+| `-diff`           | Сохранить сканирование и вывести изменения относительно предыдущего |
+| `-json` / `-md` / `-csv` / `-sarif` / `-html` `ФАЙЛ` | Записать отчёт в соответствующем формате |
+| `-obsidian DIR`   | Записать хранилище Obsidian в эту папку                    |
 
-**Bilish foydali:**
+**Полезно знать:**
 
-- Bayroqlar nishondan **oldin** yozilishi kerak: `reconcli -active example.com`
-  ishlaydi. `reconcli example.com -active` yozilsa, dastur buni aniq xabar
-  bilan tushuntiradi va 2 kodi bilan chiqadi.
-- Nishon veb-interfeys kabi tekshiriladi: `foo`, `!!!` kabi noto'g'ri
-  qiymatlar rad etiladi (chiqish kodi 2).
-- Jonli loglar va topilgan tugunlar **stderr**'ga, yakuniy xulosa (har bir
-  tugun turi bo'yicha son va jami) **stdout**'ga chiqadi. Shuning uchun
-  `reconcli example.com > natija.txt` faylga faqat toza xulosani yozadi.
-- **Ctrl+C** skanni yumshoq to'xtatadi: shu paytgacha topilgani chiqariladi va
-  so'ralgan hisobotlar baribir yoziladi (natija qisman ekani ogohlantiriladi).
-- CLI sozlamalarni veb-interfeys bilan bir xil `config.json` dan o'qiydi.
-- CLI skanni tarixga faqat `-diff` bilan saqlaydi. Bu skanlar umumiy papkaga
-  yoziladi, shuning uchun veb-interfeys tarixida ham ko'rinadi. Qisman
-  (to'xtatilgan/vaqti tugagan) skan `-diff` bilan saqlanmaydi va dastur 1 kodi
-  bilan chiqadi.
+- Флаги нужно писать **до** цели: `reconcli -active example.com` работает. Если
+  написать `reconcli example.com -active`, программа понятно объяснит ошибку и
+  завершится с кодом 2.
+- Цель проверяется так же, как в веб-интерфейсе: неверные значения вроде `foo`,
+  `!!!` отклоняются (код выхода 2).
+- Живой журнал и найденные узлы выводятся в **stderr**, итоговая сводка
+  (количество по каждому типу узлов и итог) — в **stdout**. Поэтому
+  `reconcli example.com > итог.txt` запишет в файл только чистую сводку.
+- **Ctrl+C** мягко останавливает сканирование: найденное к этому моменту
+  выводится, а запрошенные отчёты всё равно записываются (с предупреждением, что
+  результат неполный).
+- CLI читает настройки из того же `config.json`, что и веб-интерфейс.
+- CLI сохраняет сканирование в историю только с `-diff`. Такие сканирования
+  пишутся в общую папку, поэтому видны и в истории веб-интерфейса. Неполное
+  (остановленное/прерванное по времени) сканирование с `-diff` не сохраняется, а
+  программа завершается с кодом 1.
 
 ---
 
 ## HTTP API
 
-Veb-interfeys quyidagi JSON API ustiga qurilgan (hammasi same-origin).
-Agar o'z vositangizni yozmoqchi bo'lsangiz foydali:
+Веб-интерфейс построен поверх следующего JSON API (всё same-origin). Полезно,
+если вы хотите написать свой инструмент:
 
-| Metod + yo'l                              | Nima qiladi                               |
+| Метод + путь                              | Что делает                                |
 | ----------------------------------------- | ----------------------------------------- |
-| `GET /api/events`                         | SSE oqimi: `scan:start/delta/log/progress/timing`, `graph:reset` |
-| `GET /api/status`                         | Skan ishlayaptimi va qaysi nishon         |
-| `GET /api/parse?target=`                  | Nishon qanday talqin qilinishini oldindan ko'rish |
-| `POST /api/scan`                          | Skan boshlash (`{target, consent}`)       |
-| `POST /api/cancel`                        | Joriy skanni to'xtatish                    |
-| `GET /api/snapshot`                       | To'liq joriy graf                          |
-| `GET /api/diff?target=`                   | Nishonning tarixdagi oxirgi ikki skani farqi (`added` / `removed`) |
-| `GET /api/config` · `PUT /api/config`     | Sozlamalarni o'qish / saqlash             |
-| `GET /api/nmap`                           | `nmap` o'rnatilganmi (`true` / `false`)   |
-| `GET /api/page?url=`                      | Bitta URL'ni olib, status/sarlavha/HTML ko'rsatish |
-| `GET /api/timings`                        | Manbalar vaqtlari                          |
-| `GET /api/history`                        | Skanlangan nishonlar ro'yxati             |
-| `GET /api/history/{target}`               | Nishonning saqlangan skanlari             |
-| `GET /api/history/{target}/compare?from=&to=` | Ikki skanni solishtirish (bo'sh `from` = `to` dan oldingisi, bo'sh `to` = eng oxirgisi) |
-| `POST /api/history/{target}/{id}/open`    | Eski skanni ochish                        |
-| `DELETE /api/history/{target}/{id}`       | Skanni o'chirish                          |
-| `GET /api/notes?target=` · `PUT /api/notes` | Teg/eslatmalarni o'qish / saqlash (`{target, node, tags, text}`) |
-| `GET /api/monitor` · `POST /api/monitor` · `DELETE /api/monitor/{target}` | Monitoring kuzatuvlari (`{target, intervalMin, consent, filter?, preset?}` — `filter`: `{types, minSeverity, ignoreRemoved}`, `preset`: `important`/`critical`/`all`) |
-| `POST /api/notify/test`                   | Test bildirishnoma yuborish               |
-| `GET /api/export/{format}?target=`        | Hisobot yuklab olish (`json`/`html`/`md`/`csv`/`sarif`/`obsidian`) |
-| `GET /api/screenshot?path=`               | Olingan skrinshotni ko'rsatish            |
-| `POST /api/screenshot`                    | URL tugunining skrinshoti (`{url, force?, auto?}`): saqlangan bo'lsa darhol, bo'lmasa olib qaytaradi → `{url, path, takenAt, cached}` |
+| `GET /api/events`                         | Поток SSE: `scan:start/delta/log/progress/timing`, `graph:reset` |
+| `GET /api/status`                         | Идёт ли сканирование и какая цель         |
+| `GET /api/parse?target=`                  | Заранее посмотреть, как будет понята цель |
+| `POST /api/scan`                          | Запустить сканирование (`{target, consent}`) |
+| `POST /api/cancel`                        | Остановить текущее сканирование           |
+| `GET /api/snapshot`                       | Полный текущий граф                       |
+| `GET /api/diff?target=`                   | Разница двух последних сканирований цели в истории (`added` / `removed`) |
+| `GET /api/config` · `PUT /api/config`     | Прочитать / сохранить настройки           |
+| `GET /api/nmap`                           | Установлен ли `nmap` (`true` / `false`)   |
+| `GET /api/page?url=`                      | Загрузить один URL и показать статус/заголовки/HTML |
+| `GET /api/timings`                        | Время работы источников                   |
+| `GET /api/history`                        | Список просканированных целей             |
+| `GET /api/history/{target}`               | Сохранённые сканирования цели             |
+| `GET /api/history/{target}/compare?from=&to=` | Сравнить два сканирования (пустой `from` = предыдущее перед `to`, пустой `to` = самое последнее) |
+| `POST /api/history/{target}/{id}/open`    | Открыть старое сканирование               |
+| `DELETE /api/history/{target}/{id}`       | Удалить сканирование                      |
+| `GET /api/notes?target=` · `PUT /api/notes` | Прочитать / сохранить теги и заметки (`{target, node, tags, text}`) |
+| `GET /api/monitor` · `POST /api/monitor` · `DELETE /api/monitor/{target}` | Наблюдения мониторинга (`{target, intervalMin, consent, filter?, preset?}` — `filter`: `{types, minSeverity, ignoreRemoved}`, `preset`: `important`/`critical`/`all`) |
+| `POST /api/notify/test`                   | Отправить тестовое уведомление            |
+| `GET /api/export/{format}?target=`        | Скачать отчёт (`json`/`html`/`md`/`csv`/`sarif`/`obsidian`) |
+| `GET /api/screenshot?path=`               | Показать сохранённый скриншот             |
+| `POST /api/screenshot`                    | Скриншот URL-узла (`{url, force?, auto?}`): если уже сохранён — сразу, иначе снимает и возвращает → `{url, path, takenAt, cached}` |
 
-- `POST`/`PUT` so'rovlari `Content-Type: application/json` talab qiladi, tana
-  hajmi 1 MiB gacha.
-- Xatolar `{"error": "…"}` ko'rinishida qaytadi.
-- `{target}` yo'l qismi istalgan ko'rinishda bo'lishi mumkin
-  (`https://Example.com/x` → `example.com`); saqlangan skani yo'q nishon uchun
-  `404` va tushunarli xabar qaytadi.
-- SSE hodisalari: `scan:start` (`{target, consent, monitor}` — skan boshlandi,
-  grafni tozalang), `scan:delta` (yangi tugun/bog'lanishlar), `scan:log`,
-  `scan:progress` (`finished: true` — skan tugadi), `scan:timing`,
-  `graph:reset` (server grafi almashtirildi — `/api/snapshot` ni qayta oling).
-- Teg kalitlari: `vuln`, `checked`, `interesting`, `fp`. Eslatma matni 20 000
-  belgigacha; teg ham, matn ham bo'sh bo'lsa, eslatma o'chiriladi.
-- `POST /api/screenshot`: faqat `http(s)` URL va faqat joriy grafdagi URL
-  tugunlari uchun yangi rasm olinadi (aks holda `400`/`404`). `auto: true`
-  bo'lsa, server skan so'rov yubormagan sahifa uchun yoki skrinshotlar
-  o'chirilganda `409` qaytaradi (UI shunda tugma ko'rsatadi). Brauzer
-  yo'q — `501`, vaqt tugadi — `504`.
+- Запросы `POST`/`PUT` требуют `Content-Type: application/json`, размер тела —
+  до 1 МиБ.
+- Ошибки возвращаются в виде `{"error": "…"}` (текст на русском).
+- Часть пути `{target}` может быть в любом виде
+  (`https://Example.com/x` → `example.com`); для цели без сохранённых
+  сканирований возвращается `404` с понятным сообщением.
+- События SSE: `scan:start` (`{target, consent, monitor}` — сканирование
+  началось, очистите граф), `scan:delta` (новые узлы/связи), `scan:log`,
+  `scan:progress` (`finished: true` — сканирование завершено), `scan:timing`,
+  `graph:reset` (граф сервера заменён — заново получите `/api/snapshot`).
+- Ключи тегов: `vuln` (Уязвимо), `checked` (Проверено), `interesting`
+  (Интересно), `fp` (Ложное срабатывание). Текст заметки — до 20 000 символов;
+  если и теги, и текст пусты, заметка удаляется.
+- `POST /api/screenshot`: новый снимок делается только для URL `http(s)` и
+  только для URL-узлов текущего графа (иначе `400`/`404`). При `auto: true`
+  сервер возвращает `409` для страницы, к которой сканирование не обращалось,
+  или если скриншоты отключены (интерфейс тогда показывает кнопку). Нет
+  браузера — `501`, истекло время — `504`.
 
-Misol — terminaldan passiv skan boshlash va jonli hodisalarni kuzatish:
+Пример — запустить пассивное сканирование из терминала и следить за живыми
+событиями:
 
 ```sh
 curl -s -X POST http://127.0.0.1:8081/api/scan \
   -H 'Content-Type: application/json' \
   -d '{"target":"example.com","consent":false}'
 
-curl -N http://127.0.0.1:8081/api/events          # SSE oqimi
-curl -s http://127.0.0.1:8081/api/snapshot > graf.json
+curl -N http://127.0.0.1:8081/api/events          # поток SSE
+curl -s http://127.0.0.1:8081/api/snapshot > graph.json
 ```
 
 ---
 
-## Qurish (build)
+## Сборка
 
-**Ishga tushirish uchun** hech narsa kerak emas — binary o'zi yetarli
-(SQLite sof-Go, so'z ro'yxatlari va shablonlar binary ichida).
+**Для запуска** ничего не нужно — достаточно самого бинарника (SQLite на
+чистом Go, словари и шаблоны внутри бинарника).
 
-**Qurish uchun:** [Go 1.26+](https://go.dev) va [Node.js](https://nodejs.org) + npm.
+**Для сборки:** [Go 1.26+](https://go.dev) и [Node.js](https://nodejs.org) + npm.
 
 ```sh
 make            # = make all: test + vet + build
-make frontend   # Svelte UI'ni frontend/dist ga quradi (binary'ga joylanadi)
-make web        # frontend + build/bin/osint-forge → embed qilingan veb-server
-make run        # qurib, http://127.0.0.1:8081 da ishga tushiradi
-make cli        # build/bin/reconcli → buyruq qatori versiyasi
+make frontend   # собрать Svelte UI в frontend/dist (встраивается в бинарник)
+make web        # frontend + build/bin/osint-forge → веб-сервер со встроенным UI
+make run        # собрать и запустить на http://127.0.0.1:8081
+make cli        # build/bin/reconcli → версия для командной строки
 make build      # cli + web
-make test       # go test ./...       (barcha paketlar, veb-server testlari bilan)
-make race       # go test -race ./... (CI'dagi kabi; cgo kerak)
+make test       # go test ./...       (все пакеты, включая тесты веб-сервера)
+make race       # go test -race ./... (как в CI; нужен cgo)
 make vet        # go vet ./...
 make fmt        # go fmt ./...
 make tidy       # go mod tidy
-make clean      # build/bin ni o'chiradi
+make clean      # удалить build/bin
 ```
 
-Yoki `start.sh` orqali: `./start.sh build`, `./start.sh dev`, `./start.sh run`.
-`./start.sh` (yoki `run`) Go/UI manba kodi binary'dan yangiroq bo'lsa, uni
-**avtomatik qayta quradi** — kod o'zgargandan keyin eski build ishlab qolmaydi.
-`go` yoki `npm` topilmasa, aniq xabar beradi.
+Или через `start.sh`: `./start.sh build`, `./start.sh dev`, `./start.sh run`.
+`./start.sh` (или `run`) **автоматически пересобирает** бинарник, если
+исходники Go/UI новее него — после изменения кода не запустится старая сборка.
+Если не найдены `go` или `npm`, выводится понятное сообщение.
 
-> Server binary'si `frontend/dist` ni `go:embed` orqali o'z ichiga oladi,
-> shuning uchun `go build .` dan **oldin** frontend qurilgan bo'lishi shart
-> (`make frontend`). Aks holda `pattern all:frontend/dist: no matching files
-> found` xatosi chiqadi. `make test`/`make vet` UI hali qurilmagan bo'lsa,
-> uni o'zi quradi. `reconcli` uchun frontend kerak emas.
+> Бинарник сервера включает `frontend/dist` через `go:embed`, поэтому фронтенд
+> должен быть собран **до** `go build .` (`make frontend`). Иначе появится
+> ошибка `pattern all:frontend/dist: no matching files found`. `make test` и
+> `make vet` сами собирают UI, если он ещё не собран. Для `reconcli` фронтенд не
+> нужен.
 
 ---
 
-## Testlar
+## Тесты
 
 ```sh
-make test                        # go test ./...  — hamma paket, ildiz paketi ham
-make race                        # go test -race ./...  — race detector bilan
-cd frontend && npm run check     # Svelte/TypeScript turlarini tekshirish
+make test                        # go test ./...  — все пакеты, включая корневой
+make race                        # go test -race ./...  — с race detector
+cd frontend && npm run check     # проверка типов Svelte/TypeScript
 ```
 
-`make test` endi **barcha** paketlarni, jumladan ildiz paketidagi veb-server va
-monitoring testlarini (`monitor_test.go`, `monitor_integration_test.go`)
-ishga tushiradi — avval `./internal/...` naqshi ularni jimgina o'tkazib
-yuborardi.
+`make test` запускает **все** пакеты, включая тесты веб-сервера и мониторинга в
+корневом пакете (`monitor_test.go`, `monitor_integration_test.go`) — раньше
+шаблон `./internal/...` молча их пропускал.
 
-Testlar nimani qamraydi (asosiylari): graf ma'lumotlar modelining parallel
-o'qish/yozishda xavfsizligi, qamrov qoidalari (MX/NS IP'lari, redirect'lar,
-sitemap), nmap'ning IPv4/IPv6 argumentlari, soft-404 kalibrlash, API kalitlari
-va tokenlarning xato matnlariga tushmasligi, SQLite'ni ikki jarayon bir vaqtda
-ishlatishi, tarixni saqlash/dedup/chegara, monitoringning saqlanishi va
-to'liq bo'lmagan skanlarni e'tiborsiz qoldirishi, hisobot formatlari
-(SARIF joylashuvlari, `<nil>` yo'qligi).
+Что покрывают тесты (основное): безопасность модели данных графа при
+параллельном чтении/записи, правила области (IP серверов MX/NS, редиректы,
+sitemap), аргументы nmap для IPv4/IPv6, калибровку soft-404, то, что ключи API и
+токены не попадают в тексты ошибок, одновременную работу двух процессов с
+SQLite, сохранение/дедупликацию/ограничение истории, сохранение мониторинга и
+игнорирование неполных сканирований, форматы отчётов (расположения в SARIF,
+отсутствие `<nil>`).
 
-**CI** (GitHub Actions, `.github/workflows/ci.yml`) har bir push va pull
-request'da `go vet ./internal/... ./cmd/...`, `go test -race ./internal/...` va
-CLI qurilishini bajaradi. Veb-server paketi `frontend/dist`ni embed qilgani
-uchun uni ham CI'da tekshirish uchun workflow'ga frontend qurish
-(`npm ci && npm run build`, `npm run check`) va `go vet ./...` /
-`go test -race ./...` qadamlarini qo'shish tavsiya etiladi. Lokal `make test`
-va `make race` bularni allaqachon bajaradi.
+**CI** (GitHub Actions, `.github/workflows/ci.yml`) на каждый push и pull
+request выполняет `go vet ./internal/... ./cmd/...`, `go test -race
+./internal/...` и сборку CLI. Поскольку пакет веб-сервера встраивает
+`frontend/dist`, чтобы проверять его в CI, рекомендуется добавить в workflow
+сборку фронтенда (`npm ci && npm run build`, `npm run check`) и шаги
+`go vet ./...` / `go test -race ./...`. Локально `make test` и `make race` уже
+это делают.
 
 ---
 
-## Loyiha tuzilishi
+## Структура проекта
 
 ```
 osint-forge/
-├── main.go                 # veb-server ishga tushishi (bayroqlar, embed, :8081)
-├── api.go                  # HTTP marshrutlar: JSON API, eksport, SPA, CSRF qo'riqchisi
-├── sse.go                  # Server-Sent Events hub (jonli yangilanishlar)
-├── app.go                  # backend: skan boshqaruvi, config, manbalar to'plami
-├── app_history.go          # tarix/eslatma yordamchilari
-├── app_screenshot.go       # so'rov bo'yicha skrinshot (POST /api/screenshot)
-├── monitor.go              # uzluksiz monitoring rejalashtirgichi (+ monitor.json)
-├── monitor_filter.go       # monitoring xabar filtri (shablonlar, turlar, jiddiylik)
-├── start.sh                # ishga tushirgich (run / dev / build)
-├── Makefile                # qurish va test buyruqlari
+├── main.go                 # запуск веб-сервера (флаги, embed, :8081)
+├── api.go                  # HTTP-маршруты: JSON API, экспорт, SPA, защита от CSRF
+├── sse.go                  # хаб Server-Sent Events (живые обновления)
+├── app.go                  # бэкенд: управление сканированием, конфиг, набор источников
+├── app_history.go          # помощники истории/заметок
+├── app_screenshot.go       # скриншот по запросу (POST /api/screenshot)
+├── monitor.go              # планировщик непрерывного мониторинга (+ monitor.json)
+├── monitor_filter.go       # фильтр уведомлений мониторинга (пресеты, типы, серьёзность)
+├── start.sh                # скрипт запуска (run / dev / build)
+├── Makefile                # команды сборки и тестов
 ├── .github/workflows/      # CI
-├── cmd/reconcli/           # xuddi shu dvigatel ustidagi CLI
+├── cmd/reconcli/           # CLI поверх того же движка
 ├── internal/
-│   ├── config/             # sozlamalarni yuklash/saqlash, standart qiymatlar
-│   ├── core/               # pipeline, bosqichlar, collector, nishon, scope
-│   ├── graph/              # konkurentlikka chidamli graf + Obsidian eksport
-│   ├── recon/              # passiv OSINT manbalari (+ 5000 subdomen ro'yxati)
-│   ├── scan/               # aktiv manbalar (+ bidi.go: doimiy Firefox orqali tez skrinshot)
-│   │   ├── checks/         #   ichki shablonlar (.json)
-│   │   └── wordlists/      #   SecLists fuzzing ro'yxatlari
-│   ├── cve/                # NVD moslashtirish, SQLite kesh, KEV + EPSS
-│   ├── history/            # skanlarni saqlash, ro'yxat, diff
-│   ├── notes/              # pentester teglari va eslatmalari
-│   ├── notify/             # Telegram / webhook bildirishnomalari
-│   └── report/             # HTML / MD / CSV / SARIF / JSON generatorlari
+│   ├── config/             # загрузка/сохранение настроек, значения по умолчанию
+│   ├── core/               # конвейер, этапы, collector, цель, область
+│   ├── graph/              # потокобезопасный граф + экспорт в Obsidian
+│   ├── recon/              # пассивные источники OSINT (+ словарь на 5000 поддоменов)
+│   ├── scan/               # активные источники (+ bidi.go: быстрые скриншоты через постоянный Firefox)
+│   │   ├── checks/         #   встроенные шаблоны (.json)
+│   │   └── wordlists/      #   словари SecLists для фаззинга
+│   ├── cve/                # сопоставление NVD, кэш SQLite, KEV + EPSS
+│   ├── history/            # сохранение сканирований, список, сравнение
+│   ├── notes/              # теги и заметки пентестера
+│   ├── notify/             # уведомления Telegram / вебхук
+│   └── report/             # генераторы HTML / MD / CSV / SARIF / JSON
 └── frontend/
     └── src/
-        ├── App.svelte      # asosiy qobiq (SSE, resync, ko'rinishlar)
+        ├── App.svelte      # основная оболочка (SSE, ресинхронизация, виды)
         ├── components/     # DetailPanel, TableView, Gallery, HistoryDrawer,
         │                   # MonitorDrawer, SourcesDrawer, SettingsModal,
         │                   # NotesEditor, NextStep, ShotPreview, Legend, Footer
         └── lib/            # api.ts, graph.ts (Cytoscape), state, guidance, actions, models,
-                            # layoutCore.ts + layout.worker.ts (fCoSE, halqalar, ajratish)
+                            # i18n.ts (русские названия этапов, типов, серьёзности),
+                            # layoutCore.ts + layout.worker.ts (fCoSE, кольца, разведение)
 ```
 
-### Yangi manba qo'shish
+### Добавление нового источника
 
-Har bir manba `core.Source` interfeysini amalga oshiradi:
+Каждый источник реализует интерфейс `core.Source`:
 
 ```go
 type Source interface {
-    Name() string                                  // panel va loglardagi nom
+    Name() string                                  // имя в панели и журнале
     Stage() core.Stage                             // StageDiscovery … StagePost
-    Applicable(core.Target) bool                   // kalit/sozlama yo'q bo'lsa false
+    Applicable(core.Target) bool                   // false, если нет ключа/настройки
     Run(ctx context.Context, c *core.Collector) error
 }
 ```
 
-Manba topgan narsalarini `Collector` orqali grafga qo'shadi. Qoidalar:
+Источник добавляет найденное в граф через `Collector`. Правила:
 
-- Aktiv manba har bir host'ga so'rov yuborishdan oldin `c.InScope(host)` bilan
-  qamrovni tekshirishi shart. HTTP so'rovlari uchun kontekstni
-  `withScope(ctx, c)` bilan o'rang — shunda redirect'lar ham qamrovdan
-  chiqmaydi.
-- Host nomini **jonli** DNS orqali resolve qilsangiz, `c.MarkResolved(host, ip)`
-  ni chaqiring — IP faqat shunda aktiv skan qamroviga kiradi. Tarixiy
-  ma'lumotlar (passiv DNS) uchun buni chaqirmang.
-- Tugunni o'qish uchun `c.GetNode` dan foydalaning: u nusxa qaytaradi. Grafning
-  jonli tugunini to'g'ridan-to'g'ri o'qish boshqa manba bilan race'ga olib
-  keladi.
-- Uzoq sikllarda `ctx.Err()` ni tekshiring — "To'xtatish" va vaqt byudjeti shu
-  orqali ishlaydi.
+- Активный источник обязан перед запросом к каждому хосту проверять область
+  через `c.InScope(host)`. Для HTTP-запросов оборачивайте контекст в
+  `withScope(ctx, c)` — тогда и редиректы не выйдут за пределы области.
+- Если вы разрешаете имя хоста через **живой** DNS, вызовите
+  `c.MarkResolved(host, ip)` — только тогда IP попадает в область активного
+  сканирования. Для исторических данных (пассивный DNS) не вызывайте его.
+- Для чтения узла используйте `c.GetNode`: он возвращает копию. Прямое чтение
+  живого узла графа приводит к гонке с другим источником.
+- В долгих циклах проверяйте `ctx.Err()` — через это работают «Остановить» и
+  лимит времени.
+- Сообщения журнала (`c.Log`) и тексты находок (`c.Finding`) пишите на русском.
 
-Yangi manbani
-`app.go` dagi `buildSources` ga **va** `cmd/reconcli/main.go` dagi ro'yxatga
-qo'shing — passiv bo'lsa umumiy ro'yxatga, aktiv bo'lsa `consent` / `-active`
-blokiga.
+Новый источник добавьте в `buildSources` в `app.go` **и** в список в
+`cmd/reconcli/main.go` — если он пассивный, в общий список, если активный — в
+блок `consent` / `-active`.
 
 ---
 
-## Muammolarni hal qilish
+## Решение проблем
 
-| Belgi                                                  | Sabab va yechim                                                     |
+| Симптом                                                | Причина и решение                                                   |
 | ------------------------------------------------------ | ------------------------------------------------------------------- |
-| `listen 127.0.0.1:8081: address already in use`        | Port band (ehtimol boshqa nusxa ishlayapti). Uni to'xtating yoki `-addr 127.0.0.1:8082` bilan ishga tushiring. |
-| `a scan is already running`                            | Bir vaqtda bitta skan. Avval joriysini to'xtating (interfeysdagi tugma yoki `POST /api/cancel`) va "To'xtatilmoqda…" tugashini kuting. |
-| `noto'g'ri nishon: …`                                  | Nishon formati noto'g'ri — [Nishon formatlari](#nishon-formatlari) ga qarang. |
-| Faqat passiv natijalar, port/URL yo'q                  | Ruxsat (consent) belgilanmagan yoki CLI'da `-active` yo'q.          |
-| Servis versiyalari va CVE kam                           | `nmap` PATH'da yo'q — sof-Go port skaner ishlagan (`GET /api/nmap` → `false`). nmap'ni o'rnating. |
-| CVE moslashtirish sekin                                | NVD kaliti yo'q — so'rovlar limitga mos sekinlashtiriladi. `nvd_key` qo'shing. |
-| Skrinshotlar yo'q                                      | Chromium/Firefox PATH'da topilmadi yoki `screenshots` o'chiq.        |
-| Skrinshot "sahifa ochilmadi" / "javob bermadi" xatosi bilan | Sayt yopiq, DNS topilmadi yoki 15 soniyada umuman javob bermadi — bu saytning holati, brauzerniki emas. |
-| Footer'da uzoq vaqt "🧭 Graf joylashtirilmoqda…"        | Minglab tugunli graf ~20–30 soniyada joylashadi. Bu vaqtda interfeys bilan ishlash mumkin. |
-| Monitoring: "o'zgarish bor, lekin filtrga mos emas"    | O'zgarishlar kuzatuv filtridan o'tmadi. Kerak bo'lsa ✏️ bilan filtrni kengaytiring ("Hamma o'zgarishlar"). |
-| Panelda "Skrinshot olish" tugmasi chiqdi, rasm yo'q     | Bu sahifaga skan so'rov yubormagan (arxiv/sitemap/JS) yoki skrinshotlar o'chirilgan — rasm faqat tugma bosilganda olinadi. |
-| Kalitli manba (Shodan, Censys…) ishlamadi              | Kalit bo'sh bo'lsa manba umuman ro'yxatga kirmaydi. ⚙ da kalitni tekshiring, "Manbalar" panelida holatini ko'ring. |
-| Ba'zi hostlar yoki IP'lar aktiv skanlanmadi ("N IP qamrovdan tashqarida") | Ular qamrovdan tashqarida (`scope_strict`): MX/NS serverlari, passiv-DNS IP'lari, begona domenlar. Ruxsatingiz bo'lsa, `extra_scope` ga qo'shing. |
-| Skan erta to'xtadi                                     | `scan_timeout_min` byudjeti tugagan. Qiymatni oshiring yoki CLI'da `-timeout` bering. |
-| nmap uzoq ishlaydi                                     | `-sV` har bir ochiq portga ko'plab so'rov yuboradi. Sozlamalarda `nmap_args` ni qisqartiring (masalan `-sV -T4 --top-ports 100` yoki `-p 80,443,8080`). |
-| Tarixda skanlar kutilganidan kam                       | Oldingisi bilan bir xil skan eski nusxani almashtiradi; nishon boshiga 200 tadan ortig'i o'chiriladi. |
-| Monitoring paneli: "skan to'liq tugamadi"              | Monitoring skani to'xtatilgan yoki vaqt byudjetiga sig'magan — u saqlanmadi va taqqoslanmadi. `scan_timeout_min` ni oshiring. |
-| Monitoring paneli: "xabar yuborilmadi: …"              | Telegram/webhook rad etdi — sabab xabarning o'zida (masalan "chat not found"). ⚙ dagi token/chat ID ni tekshirib, "✈ Test xabar" bilan sinang. |
-| `cross-origin request blocked` (403)                   | API'ga boshqa origin'dan murojaat qilinyapti. Interfeysni server manzilidan oching yoki `curl` kabi `Origin` yubormaydigan mijoz ishlating. |
-| `pattern all:frontend/dist: no matching files found`   | Frontend qurilmagan — avval `make frontend`.                         |
+| `listen 127.0.0.1:8081: address already in use`        | Порт занят (вероятно, работает другой экземпляр). Остановите его или запустите с `-addr 127.0.0.1:8082`. |
+| `сканирование уже выполняется`                         | Одновременно — одно сканирование. Сначала остановите текущее (кнопка в интерфейсе или `POST /api/cancel`) и дождитесь окончания «Остановка…». |
+| `неверная цель: …`                                     | Неверный формат цели — см. [Форматы цели](#форматы-цели). |
+| Только пассивные результаты, нет портов/URL            | Не отмечено согласие или в CLI нет `-active`.                      |
+| Мало версий сервисов и CVE                             | `nmap` нет в PATH — работал сканер портов на Go (`GET /api/nmap` → `false`). Установите nmap. |
+| Сопоставление CVE идёт медленно                        | Нет ключа NVD — запросы замедляются под лимит. Добавьте `nvd_key`.  |
+| Нет скриншотов                                         | Chromium/Firefox не найден в PATH или `screenshots` выключен.       |
+| Скриншот с ошибкой «страница не открылась» / «не ответила» | Сайт закрыт, DNS не найден или он вообще не ответил за 15 секунд — это состояние сайта, а не браузера. |
+| Долго видно «🧭 Раскладка графа…» в нижней панели       | Граф из тысяч узлов раскладывается ~20–30 секунд. В это время с интерфейсом можно работать. |
+| Мониторинг: «есть изменения, но они не проходят фильтр» | Изменения не прошли фильтр наблюдения. При необходимости расширьте фильтр кнопкой ✏️ («Все изменения»). |
+| В панели появилась кнопка «Сделать скриншот», снимка нет | Сканирование не обращалось к этой странице (архив/sitemap/JS) или скриншоты выключены — снимок делается только по кнопке. |
+| Источник с ключом (Shodan, Censys…) не сработал        | При пустом ключе источник вообще не попадает в список. Проверьте ключ в ⚙ и состояние в панели «Источники». |
+| Некоторые хосты или IP не сканировались активно («N IP вне области») | Они вне области (`scope_strict`): серверы MX/NS, IP пассивного DNS, чужие домены. Если есть разрешение, добавьте их в `extra_scope`. |
+| Сканирование остановилось раньше времени               | Исчерпан лимит `scan_timeout_min`. Увеличьте значение или передайте `-timeout` в CLI. |
+| nmap работает долго                                    | `-sV` отправляет много запросов на каждый открытый порт. Сократите `nmap_args` в настройках (например, `-sV -T4 --top-ports 100` или `-p 80,443,8080`). |
+| В истории меньше сканирований, чем ожидалось           | Сканирование, идентичное предыдущему, заменяет старую копию; больше 200 на цель удаляются. |
+| Панель мониторинга: «сканирование не завершилось полностью» | Сканирование мониторинга было остановлено или не уложилось в лимит времени — оно не сохранено и не сравнивалось. Увеличьте `scan_timeout_min`. |
+| Панель мониторинга: «уведомление не отправлено: …»     | Telegram/вебхук отклонил запрос — причина в самом сообщении (например, «chat not found»). Проверьте токен/ID чата в ⚙ и нажмите «✈ Тестовое сообщение». |
+| `кросс-доменный запрос заблокирован` (403)             | К API обращаются с другого origin. Откройте интерфейс с адреса сервера или используйте клиент без `Origin`, например `curl`. |
+| `pattern all:frontend/dist: no matching files found`   | Фронтенд не собран — сначала `make frontend`.                       |
 
 ---
 
-## Ma'lum cheklovlar va tugallanmagan ishlar
+## Известные ограничения и незавершённые работы
 
-**Cheklovlar:**
+**Ограничения:**
 
-- Autentifikatsiya (login) yo'q — dastur faqat lokal foydalanish uchun
-  mo'ljallangan.
-- Bir vaqtda faqat bitta skan ishlaydi; monitoring skanlari ham shu navbatda.
-- Monitoring skani ekrandagi grafni almashtiradi (alohida "fon" grafi yo'q).
-- "To'xtatish" ishlab turgan so'rovlarni bekor qiladi, lekin zone transfer
-  (AXFR) kabi ba'zi tarmoq amallari o'z timeout'i (≈10 s) tugashini kutadi.
+- Авторизации (входа) нет — программа рассчитана только на локальное
+  использование.
+- Одновременно работает только одно сканирование; сканирования мониторинга
+  стоят в той же очереди.
+- Сканирование мониторинга заменяет граф на экране (отдельного «фонового» графа
+  нет).
+- «Остановить» отменяет текущие запросы, но некоторые сетевые операции, такие
+  как перенос зоны (AXFR), ждут окончания своего таймаута (≈10 с).
 
-**Kodda boshlangan, lekin hali tugallanmagan:**
+**Начато в коде, но пока не завершено:**
 
-- **Bulut bucket tekshiruvlari** — graf modelida `bucket` tuguni (S3/GCS/Azure)
-  va Post bosqichida "bucket checks" ko'zda tutilgan, lekin hozircha hech bir
-  manba bunday tugun yaratmaydi.
-- **Loyiha (project) rejimi** — ichki `ScanRequest` tuzilmasida `project` va
-  skan boshiga qo'shimcha `extraScope` maydonlari bor, lekin `POST /api/scan`
-  hozircha faqat `target` va `consent` ni qabul qiladi. Hozir qo'shimcha
-  qamrovni faqat umumiy `extra_scope` sozlamasi orqali berish mumkin.
-- **CLI / DevOps rejimi** — `reconcli` kelgusidagi to'liq CLI/DevOps rejimining
-  asosi sifatida yaratilgan; hozircha u bitta nishonni skanlab, hisobot
-  yozadi.
+- **Проверки облачных бакетов** — в модели графа предусмотрены узел `bucket`
+  (S3/GCS/Azure) и «bucket checks» на этапе «Анализ», но пока ни один источник
+  такие узлы не создаёт.
+- **Режим проекта** — во внутренней структуре `ScanRequest` есть поля `project`
+  и `extraScope` на одно сканирование, но `POST /api/scan` пока принимает только
+  `target` и `consent`. Сейчас дополнительную область можно задать только через
+  общую настройку `extra_scope`.
+- **Режим CLI / DevOps** — `reconcli` создан как основа будущего полноценного
+  режима CLI/DevOps; пока он сканирует одну цель и пишет отчёт.
 
 ---
 
-## Litsenziya va mas'uliyat
+## Лицензия и ответственность
 
-[MIT litsenziyasi](LICENSE) asosida tarqatiladi.
+Распространяется по [лицензии MIT](LICENSE).
 
-osint-forge **avtorizatsiyalangan xavfsizlik testi va ta'lim** uchun
-mo'ljallangan. Uni faqat o'zingizga tegishli yoki tekshirishga **yozma ruxsat**
-berilgan tizimlarga qarshi ishlating. Ruxsatsiz skanlash ko'p yurisdiksiyada
-qonunga ziddir. Dastur mualliflari uni noto'g'ri ishlatishdan kelib chiqadigan
-oqibatlar uchun javobgar emas.
+osint-forge предназначен для **авторизованного тестирования безопасности и
+обучения**. Используйте его только против систем, которые принадлежат вам или на
+проверку которых есть **письменное разрешение**. Сканирование без разрешения
+незаконно во многих юрисдикциях. Авторы программы не несут ответственности за
+последствия её неправильного использования.

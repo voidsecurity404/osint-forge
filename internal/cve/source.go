@@ -105,7 +105,7 @@ func (s Source) Run(ctx context.Context, c *core.Collector) error {
 			c.Edge(svcID, cveID, "has_cve")
 			cveIDs[m.ID] = true
 		}
-		c.Log(core.LogInfo, fmt.Sprintf("%s → %d CVEs", node.Label, len(matches)))
+		c.Log(core.LogInfo, fmt.Sprintf("%s → %d CVE", node.Label, len(matches)))
 		c.Flush()
 	}
 
@@ -120,7 +120,7 @@ func (s Source) Run(ctx context.Context, c *core.Collector) error {
 		for id, score := range epss {
 			c.Node(graph.NodeCVE, id, id, map[string]any{"epss": score})
 		}
-		c.Log(core.LogInfo, fmt.Sprintf("EPSS scored %d/%d CVEs", len(epss), len(ids)))
+		c.Log(core.LogInfo, fmt.Sprintf("EPSS получен для %d/%d CVE", len(epss), len(ids)))
 		c.Flush()
 	}
 	return nil

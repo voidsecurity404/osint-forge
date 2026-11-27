@@ -90,13 +90,13 @@ func (s RobotsSource) parseRobots(ctx context.Context, c *core.Collector, base s
 		}
 	}
 	if count > 0 {
-		c.Log(core.LogInfo, fmt.Sprintf("%s/robots.txt → %d paths", base, count))
+		c.Log(core.LogInfo, fmt.Sprintf("%s/robots.txt → путей: %d", base, count))
 	}
 	// Follow any sitemaps the robots.txt points to — but only on in-scope hosts:
 	// a "Sitemap:" line may point at a CDN or a completely different company.
 	for _, sm := range sitemaps {
 		if !inScopeURL(c, sm) {
-			c.Log(core.LogInfo, "sitemap qamrovdan tashqarida, o'tkazib yuborildi: "+sm)
+			c.Log(core.LogInfo, "sitemap вне области, пропущен: "+sm)
 			continue
 		}
 		s.importSitemap(ctx, c, base, sm)
@@ -129,7 +129,7 @@ func (s RobotsSource) importSitemap(ctx context.Context, c *core.Collector, base
 		count++
 	}
 	if count > 0 {
-		c.Log(core.LogInfo, fmt.Sprintf("%s → %d sitemap URLs", sitemapURL, count))
+		c.Log(core.LogInfo, fmt.Sprintf("%s → URL из sitemap: %d", sitemapURL, count))
 	}
 }
 

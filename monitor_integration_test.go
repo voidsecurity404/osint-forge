@@ -93,7 +93,7 @@ func TestMonitorIgnoresIncompleteScan(t *testing.T) {
 	m.Add("example.com", 60, false)
 	m.onScanDone(result(t, ScanRequest{Target: "example.com", Monitor: true}, snap("root"), false))
 	expectNone(t, got, "incomplete scan")
-	if l := m.List(); !strings.Contains(l[0].LastChange, "to'liq tugamadi") {
+	if l := m.List(); !strings.Contains(l[0].LastChange, "не завершилось полностью") {
 		t.Fatalf("LastChange = %q", l[0].LastChange)
 	}
 }

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# osint-forge web launcher (Go web server on port 8081).
+# Запуск веб-интерфейса osint-forge (Go-сервер на порту 8081).
 #
-#   ./start.sh            build if needed, then run → http://localhost:8081
-#   ./start.sh build      (re)build frontend + server binary
-#   ./start.sh dev        Vite dev server (hot reload) proxied to the Go API
-#   ./start.sh help       show this help
+#   ./start.sh            собрать при необходимости и запустить → http://localhost:8081
+#   ./start.sh build      (пере)собрать фронтенд и бинарник сервера
+#   ./start.sh dev        dev-сервер Vite (горячая перезагрузка) с проксированием на Go API
+#   ./start.sh help       показать эту справку
 #
-# Extra args are passed to the binary, e.g.:
-#   ./start.sh run -addr 0.0.0.0:8081   (expose on the LAN — no login, be careful)
-#   ./start.sh run -open                (open the browser automatically)
+# Остальные аргументы передаются бинарнику, например:
+#   ./start.sh run -addr 0.0.0.0:8081   (доступ из локальной сети — авторизации нет, осторожно)
+#   ./start.sh run -open                (автоматически открыть браузер)
 #
 set -euo pipefail
 
@@ -18,18 +18,18 @@ BIN="$SCRIPT_DIR/build/bin/osint-forge"
 cd "$SCRIPT_DIR"
 
 need() {
-  command -v "$1" >/dev/null 2>&1 || { echo "❌ '$1' topilmadi — qurish uchun $2 kerak." >&2; exit 1; }
+  command -v "$1" >/dev/null 2>&1 || { echo "❌ '$1' не найден — для сборки нужен $2." >&2; exit 1; }
 }
 
 build() {
   need go "Go 1.26+ (https://go.dev)"
   need npm "Node.js + npm (https://nodejs.org)"
-  echo "🔨 frontend build…"
+  echo "🔨 сборка фронтенда…"
   (cd frontend && { [ -d node_modules ] || npm install --no-audit --no-fund; } && npm run build)
-  echo "🔨 Go server build…"
+  echo "🔨 сборка Go-сервера…"
   mkdir -p build/bin
   go build -o "$BIN" .
-  echo "✅ Tayyor: $BIN"
+  echo "✅ Готово: $BIN"
 }
 
 # stale: true when there is no binary yet or any Go/UI source is newer than it
@@ -52,7 +52,7 @@ case "$cmd" in
       if command -v go >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
         build
       elif [ -x "$BIN" ]; then
-        echo "⚠ manba kod binary'dan yangiroq, lekin go/npm yo'q — eski build ishga tushirilmoqda." >&2
+        echo "⚠ исходники новее бинарника, но go/npm не найдены — запускается старая сборка." >&2
       else
         build # fails with a clear message about the missing tool
       fi
@@ -67,5 +67,5 @@ case "$cmd" in
     ;;
   # Only the header block (up to `set -euo`), without the shebang line.
   help|-h|--help) sed -n '2,/^set -euo/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//' ;;
-  *) echo "Noma'lum buyruq: $cmd  (./start.sh [run|build|dev|help])" >&2; exit 1 ;;
+  *) echo "Неизвестная команда: $cmd  (./start.sh [run|build|dev|help])" >&2; exit 1 ;;
 esac

@@ -93,7 +93,7 @@ func safeHost(raw string) string {
 func post(ctx context.Context, url, name, ctype string, body []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("notify: %s: noto'g'ri URL", name)
+		return fmt.Errorf("notify: %s: неверный URL", name)
 	}
 	req.Header.Set("Content-Type", ctype)
 	resp, err := client.Do(req)

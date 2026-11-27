@@ -87,9 +87,9 @@ func (s TakeoverSource) check(ctx context.Context, c *core.Collector, host strin
 		if s.hasFingerprint(ctx, host, sig.fingerprint) {
 			hostID := c.HostID(host) // real node id: domain, subdomain or ip
 			c.Finding("high", "takeover:"+host,
-				"Subdomain takeover ehtimoli: "+host+" ("+sig.service+")",
-				host+" → "+cname+" ("+sig.service+") da egasiz resurs topildi; subdomenni egallab olish mumkin.", hostID)
-			c.Log(core.LogWarn, "possible takeover: "+host+" ("+sig.service+")")
+				"Возможен захват поддомена: "+host+" ("+sig.service+")",
+				host+" → "+cname+" ("+sig.service+") — найден невостребованный ресурс; поддомен можно захватить.", hostID)
+			c.Log(core.LogWarn, "возможен захват: "+host+" ("+sig.service+")")
 			c.Flush()
 		}
 		break

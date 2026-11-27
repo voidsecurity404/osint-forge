@@ -28,7 +28,7 @@ class AppState {
   graphTarget = $state("");
   consent = $state(false);
   running = $state(false);
-  /** "To'xtatish" was pressed; the server is still winding the scan down. */
+  /** «Остановить» was pressed; the server is still winding the scan down. */
   cancelling = $state(false);
   nmapOk = $state(false);
   /** The layout worker is arranging the graph (big graphs take a while). */

@@ -15,7 +15,7 @@
 
 <div class="gallery">
   {#if shots.length === 0}
-    <p class="muted center">Skrinshot yo'q. Sozlamalarda "Jonli web host'lar skrinshoti"ni yoqing (Chromium yoki Firefox kerak) va aktiv skan qiling.</p>
+    <p class="muted center">Скриншотов нет. Включите в настройках «Скриншоты живых веб-хостов» (нужен Chromium или Firefox) и выполните активное сканирование.</p>
   {:else}
     <div class="shots-grid">
       {#each shots as n (n.id)}

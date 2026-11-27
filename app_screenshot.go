@@ -42,7 +42,7 @@ func (a *App) handleCapture(w http.ResponseWriter, r *http.Request) {
 	u := strings.TrimSpace(req.URL)
 	l := strings.ToLower(u)
 	if !strings.HasPrefix(l, "http://") && !strings.HasPrefix(l, "https://") {
-		writeErr(w, http.StatusBadRequest, errors.New("faqat http(s) sahifalarning skrinshoti olinadi"))
+		writeErr(w, http.StatusBadRequest, errors.New("скриншот можно сделать только для http(s)-страниц"))
 		return
 	}
 	path, err := scan.ScreenshotPath(u)
@@ -64,16 +64,16 @@ func (a *App) handleCapture(w http.ResponseWriter, r *http.Request) {
 	a.mu.Unlock()
 	node, ok := g.Copy(graph.NodeID(graph.NodeURL, u))
 	if !ok {
-		writeErr(w, http.StatusNotFound, errors.New("bu URL joriy grafda yo'q"))
+		writeErr(w, http.StatusNotFound, errors.New("этого URL нет в текущем графе"))
 		return
 	}
 	if req.Auto {
 		if !cfg.Screenshots {
-			writeErr(w, http.StatusConflict, errors.New("sozlamalarda skrinshotlar o'chirilgan — olish uchun tugmani bosing"))
+			writeErr(w, http.StatusConflict, errors.New("скриншоты отключены в настройках — нажмите кнопку, чтобы сделать снимок"))
 			return
 		}
 		if _, contacted := node.Props["status"]; !contacted {
-			writeErr(w, http.StatusConflict, errors.New("bu sahifaga skan paytida so'rov yuborilmagan (arxiv/sitemap/JS) — skrinshot olish uchun tugmani bosing"))
+			writeErr(w, http.StatusConflict, errors.New("во время сканирования к этой странице не обращались (архив/sitemap/JS) — нажмите кнопку, чтобы сделать снимок"))
 			return
 		}
 	}
@@ -89,7 +89,7 @@ func (a *App) handleCapture(w http.ResponseWriter, r *http.Request) {
 	case r.Context().Err() != nil:
 		return // the user moved on to another node; nobody is listening
 	case ctx.Err() != nil:
-		writeErr(w, http.StatusGatewayTimeout, errors.New("skrinshot vaqtida olinmadi — keyinroq qayta urinib ko'ring"))
+		writeErr(w, http.StatusGatewayTimeout, errors.New("скриншот не успел сформироваться — попробуйте позже"))
 		return
 	default:
 		writeErr(w, http.StatusBadGateway, err)

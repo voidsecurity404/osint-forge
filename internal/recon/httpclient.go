@@ -54,7 +54,7 @@ func do(req *http.Request) ([]byte, error) {
 func getJSON(ctx context.Context, cfg config.Config, url string, headers map[string]string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return fmt.Errorf("bad request URL %s", redact(url))
+		return fmt.Errorf("неверный URL запроса %s", redact(url))
 	}
 	req.Header.Set("User-Agent", cfg.HTTPUserAgent)
 	req.Header.Set("Accept", "application/json")
@@ -76,7 +76,7 @@ func postJSON(ctx context.Context, cfg config.Config, url string, headers map[st
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(buf))
 	if err != nil {
-		return fmt.Errorf("bad request URL %s", redact(url))
+		return fmt.Errorf("неверный URL запроса %s", redact(url))
 	}
 	req.Header.Set("User-Agent", cfg.HTTPUserAgent)
 	req.Header.Set("Accept", "application/json")

@@ -69,7 +69,7 @@ func (s NucleiSource) Run(ctx context.Context, c *core.Collector) error {
 	cmd := exec.CommandContext(ctx, "nuclei", args...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	c.Log(core.LogInfo, "running nuclei on "+itoa(len(bases))+" host(s)")
+	c.Log(core.LogInfo, "запуск nuclei, хостов: "+itoa(len(bases)))
 	// nuclei exits non-zero when it finds nothing on some targets; parse output
 	// regardless of exit status.
 	_ = cmd.Run()
@@ -98,10 +98,10 @@ func (s NucleiSource) Run(ctx context.Context, c *core.Collector) error {
 		baseID := graph.NodeID(graph.NodeURL, strings.TrimSuffix(r.Host, "/"))
 		c.Finding(sev, "nuclei:"+r.TemplateID+":"+at,
 			"Nuclei: "+title+" ("+at+")",
-			"Nuclei shabloni ("+r.TemplateID+") mos keldi: "+at, baseID)
+			"Сработал шаблон Nuclei ("+r.TemplateID+"): "+at, baseID)
 		count++
 	}
-	c.Log(core.LogInfo, "nuclei: "+itoa(count)+" matches")
+	c.Log(core.LogInfo, "nuclei: совпадений "+itoa(count))
 	c.Flush()
 	return nil
 }

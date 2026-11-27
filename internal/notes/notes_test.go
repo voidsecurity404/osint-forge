@@ -20,7 +20,7 @@ func TestSetLoadAnnotate(t *testing.T) {
 		t.Fatalf("load: %v", all)
 	}
 	d := Annotate(graph.Delta{Nodes: []*graph.Node{{ID: "url:https://example.com/admin", Props: map[string]any{"status": 403}}, {ID: "x"}}}, all)
-	if d.Nodes[0].Props["pentester_tags"] != "Zaif, Tekshirildi" || d.Nodes[0].Props["pentester_note"] == nil {
+	if d.Nodes[0].Props["pentester_tags"] != "Уязвимо, Проверено" || d.Nodes[0].Props["pentester_note"] == nil {
 		t.Fatalf("annotate: %+v", d.Nodes[0].Props)
 	}
 	// clearing removes it

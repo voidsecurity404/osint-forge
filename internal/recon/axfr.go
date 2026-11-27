@@ -50,8 +50,8 @@ func (s AXFRSource) Run(ctx context.Context, c *core.Collector) error {
 		}
 		// Zone transfer succeeded — a notable finding.
 		c.Finding("high", "axfr:"+server,
-			"Zone transfer (AXFR) ochiq: "+server,
-			fmt.Sprintf("%s name serveri AXFR so'roviga butun zonani (%d yozuv) qaytardi. Bu barcha DNS yozuvlarini oshkor qiladi.", server, len(records)),
+			"Открыт перенос зоны (AXFR): "+server,
+			fmt.Sprintf("Сервер имён %s отдал всю зону (%d записей) по запросу AXFR. Это раскрывает все DNS-записи.", server, len(records)),
 			domID)
 		for _, host := range records {
 			host = strings.ToLower(strings.TrimSuffix(host, "."))
@@ -61,7 +61,7 @@ func (s AXFRSource) Run(ctx context.Context, c *core.Collector) error {
 			id := c.Node(graph.NodeSubdomain, host, host, map[string]any{"via": "axfr"})
 			c.Edge(domID, id, "subdomain")
 		}
-		c.Log(core.LogWarn, fmt.Sprintf("AXFR OPEN on %s: %d records", server, len(records)))
+		c.Log(core.LogWarn, fmt.Sprintf("AXFR ОТКРЫТ на %s: %d записей", server, len(records)))
 		c.Flush()
 	}
 	return nil

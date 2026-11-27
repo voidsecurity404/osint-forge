@@ -111,7 +111,7 @@ func (c *bidiConn) readLoop() {
 		c.mu.Unlock()
 	}
 	c.mu.Lock()
-	c.err = fmt.Errorf("bidi connection closed: %w", err)
+	c.err = fmt.Errorf("соединение BiDi закрыто: %w", err)
 	for id, ch := range c.pending {
 		delete(c.pending, id)
 		close(ch)
@@ -148,12 +148,12 @@ func (c *bidiConn) call(ctx context.Context, method string, params any, out any)
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
-		return fmt.Errorf("bidi send: %w", err)
+		return fmt.Errorf("отправка BiDi: %w", err)
 	}
 	select {
 	case m, ok := <-ch:
 		if !ok {
-			return errors.New("bidi connection closed")
+			return errors.New("соединение BiDi закрыто")
 		}
 		if m.Type == "error" {
 			return fmt.Errorf("%s: %s %s", method, m.Error, m.Message)
@@ -217,7 +217,7 @@ func (c *bidiConn) capture(ctx context.Context, url string) ([]byte, error) {
 		Navigation string `json:"navigation"`
 	}
 	if err := c.call(ctx, "browsingContext.navigate", map[string]any{"context": tab, "url": url, "wait": "none"}, &nav); err != nil {
-		return nil, errPage{"sahifa ochilmadi: " + err.Error()}
+		return nil, errPage{"страница не открылась: " + err.Error()}
 	}
 
 	hard := time.NewTimer(bidiHardWait)
@@ -253,13 +253,13 @@ wait:
 		case <-hard.C:
 			break wait
 		case <-c.done:
-			return nil, errors.New("bidi connection closed")
+			return nil, errors.New("соединение BiDi закрыто")
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
 	if !dom {
-		return nil, errPage{fmt.Sprintf("sahifa %s ichida javob bermadi", bidiHardWait)}
+		return nil, errPage{fmt.Sprintf("страница не ответила за %s", bidiHardWait)}
 	}
 	if loaded {
 		select {
@@ -279,7 +279,7 @@ wait:
 	if err := c.call(ctx, "script.evaluate", map[string]any{
 		"expression": "document.documentURI", "target": map[string]string{"context": tab}, "awaitPromise": false,
 	}, &doc); err == nil && strings.HasPrefix(doc.Result.Value, "about:") && strings.Contains(doc.Result.Value, "error") {
-		return nil, errPage{"sahifa ochilmadi (" + strings.SplitN(doc.Result.Value, "?", 2)[0] + ")"}
+		return nil, errPage{"страница не открылась (" + strings.SplitN(doc.Result.Value, "?", 2)[0] + ")"}
 	}
 	var shot struct {
 		Data string `json:"data"`
@@ -289,7 +289,7 @@ wait:
 	}
 	png, err := base64.StdEncoding.DecodeString(shot.Data)
 	if err != nil || len(png) == 0 {
-		return nil, errors.New("bo'sh skrinshot")
+		return nil, errors.New("пустой скриншот")
 	}
 	return png, nil
 }
@@ -404,7 +404,7 @@ func launchFirefoxBidi(ctx context.Context, path string) (*bidiProc, error) {
 	case wsURL = <-found:
 	case <-time.After(20 * time.Second):
 		p.close()
-		return nil, errors.New("firefox BiDi did not start")
+		return nil, errors.New("Firefox BiDi не запустился")
 	case <-ctx.Done():
 		p.close()
 		return nil, ctx.Err()
@@ -442,7 +442,7 @@ func (bp *bidiPool) get(ctx context.Context, path string) (*bidiConn, func(), er
 		bp.mu.Lock()
 		if time.Since(bp.broken) < time.Minute {
 			bp.mu.Unlock()
-			return nil, nil, errors.New("bidi temporarily unavailable")
+			return nil, nil, errors.New("BiDi временно недоступен")
 		}
 		if bp.proc != nil && !bp.proc.conn.alive() {
 			bp.proc.close()

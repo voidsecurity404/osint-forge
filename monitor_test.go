@@ -44,7 +44,7 @@ func TestFormatAlert(t *testing.T) {
 		Removed: []*graph.Node{{Type: "url", Label: "http://example.com/old"}},
 	}
 	msg := formatAlert("example.com", d)
-	for _, want := range []string{"example.com", "+2 yangi, −1 yo'qolgan", "➕ subdomain: new.example.com", "➖ url:"} {
+	for _, want := range []string{"example.com", "+2 новых, −1 исчезло", "➕ subdomain: new.example.com", "➖ url:"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("alert missing %q:\n%s", want, msg)
 		}

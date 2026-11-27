@@ -126,7 +126,7 @@ func TestCaptureRespectsScreenshotToggle(t *testing.T) {
 	fakeChromium(t)
 	a := captureApp()
 	a.cfg.Screenshots = false
-	if code, res := postCapture(t, a, `{"url":"`+liveURL+`","auto":true}`); code != http.StatusConflict || !strings.Contains(res.Error, "o'chirilgan") {
+	if code, res := postCapture(t, a, `{"url":"`+liveURL+`","auto":true}`); code != http.StatusConflict || !strings.Contains(res.Error, "отключены") {
 		t.Fatalf("auto with screenshots off: %d %+v", code, res)
 	}
 	if code, _ := postCapture(t, a, `{"url":"`+liveURL+`"}`); code != 200 {
@@ -137,7 +137,7 @@ func TestCaptureRespectsScreenshotToggle(t *testing.T) {
 func TestCaptureWithoutBrowser(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	if code, res := postCapture(t, captureApp(), `{"url":"`+liveURL+`"}`); code != http.StatusNotImplemented || !strings.Contains(res.Error, "Chromium yoki Firefox") {
+	if code, res := postCapture(t, captureApp(), `{"url":"`+liveURL+`"}`); code != http.StatusNotImplemented || !strings.Contains(res.Error, "Chromium или Firefox") {
 		t.Fatalf("no browser: %d %+v", code, res)
 	}
 }

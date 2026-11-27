@@ -10,18 +10,18 @@
 {#if guide}
   <div class="nextstep">
     <button class="ns-head" onclick={() => (open = !open)}>
-      <span>🎯 Keyingi qadam — {guide.title}</span>
+      <span>🎯 Следующий шаг — {guide.title}</span>
       <span class="chev">{open ? "▾" : "▸"}</span>
     </button>
     {#if open}
       <div class="ns-body">
         <p class="ns-why">{guide.why}</p>
-        <div class="ns-sub">Qo'lda tekshirish:</div>
+        <div class="ns-sub">Проверить вручную:</div>
         <ul class="ns-list">
           {#each guide.checks as c}<li>{c}</li>{/each}
         </ul>
         {#if guide.tools?.length}
-          <div class="ns-sub">Vositalar:</div>
+          <div class="ns-sub">Инструменты:</div>
           <div class="ns-tools">
             {#each guide.tools as t}<code>{t}</code>{/each}
           </div>

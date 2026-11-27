@@ -84,7 +84,7 @@ export async function Export(format: ExportFormat, target = ""): Promise<string>
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-  return `${name} yuklab olindi`;
+  return `${name} скачан`;
 }
 
 // --- Server-Sent Events (replaces Wails EventsOn) ---
@@ -150,10 +150,10 @@ export const Timings = () => req<SourceTiming[]>("GET", "/api/timings");
 // --- pentester notes / tags ---
 export interface Note { tags?: string[]; text?: string; updated?: string }
 export const TAGS: { key: string; label: string; icon: string }[] = [
-  { key: "vuln", label: "Zaif", icon: "🐞" },
-  { key: "checked", label: "Tekshirildi", icon: "✔" },
-  { key: "interesting", label: "Qiziq", icon: "⭐" },
-  { key: "fp", label: "False positive", icon: "✖" },
+  { key: "vuln", label: "Уязвимо", icon: "🐞" },
+  { key: "checked", label: "Проверено", icon: "✔" },
+  { key: "interesting", label: "Интересно", icon: "⭐" },
+  { key: "fp", label: "Ложное", icon: "✖" },
 ];
 export const NotesLoad = (target: string) => req<Record<string, Note>>("GET", `/api/notes?target=${q(target)}`);
 export const NoteSave = (target: string, node: string, tags: string[], text: string) =>

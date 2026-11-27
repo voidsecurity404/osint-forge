@@ -87,7 +87,7 @@ func lookupRecords(ctx context.Context, c *core.Collector, domain string) {
 	if err != nil && !isNotFound(err) {
 		// SERVFAIL / timeout: we simply don't know — never report "SPF missing"
 		// or "DMARC missing" on a lookup failure (false positive).
-		c.Log(core.LogWarn, "TXT lookup failed, skipping SPF/DMARC checks: "+err.Error())
+		c.Log(core.LogWarn, "запрос TXT не удался, проверки SPF/DMARC пропущены: "+err.Error())
 		return
 	}
 	if len(txts) > 0 {
@@ -157,11 +157,11 @@ func checkEmailSecurity(ctx context.Context, c *core.Collector, domain, domID st
 	}
 	switch {
 	case spf == "" && (isOrg || hasMX):
-		c.Finding("medium", "spf-missing:"+domain, "SPF yozuvi yo'q",
-			"Domenda SPF yozuvi topilmadi — email spoofing osonlashadi.", domID)
+		c.Finding("medium", "spf-missing:"+domain, "Нет записи SPF",
+			"У домена нет записи SPF — подделка отправителя писем упрощается.", domID)
 	case spf != "" && strings.Contains(strings.ToLower(spf), "+all"):
-		c.Finding("high", "spf-weak:"+domain, "SPF juda ochiq (+all)",
-			"SPF '+all' har qanday serverga domen nomidan xat yuborishga ruxsat beradi.", domID)
+		c.Finding("high", "spf-weak:"+domain, "SPF слишком открыт (+all)",
+			"SPF '+all' разрешает любому серверу отправлять письма от имени домена.", domID)
 	}
 
 	// DMARC lives at _dmarc.<domain> (or the organisational domain) as TXT.
@@ -170,11 +170,11 @@ func checkEmailSecurity(ctx context.Context, c *core.Collector, domain, domID st
 		return
 	}
 	if dmarc == "" {
-		c.Finding("medium", "dmarc-missing:"+domain, "DMARC yozuvi yo'q",
-			"DMARC siyosati yo'q — spoofing xatlariga qarshi himoya zaif.", domID)
+		c.Finding("medium", "dmarc-missing:"+domain, "Нет записи DMARC",
+			"Политики DMARC нет — защита от поддельных писем слабая.", domID)
 	} else if dmarcTag(dmarc, "p") == "none" {
 		c.Finding("low", "dmarc-none:"+domain, "DMARC p=none",
-			"DMARC faqat kuzatuv rejimida (p=none) — spoofing bloklanmaydi.", domID)
+			"DMARC только в режиме мониторинга (p=none) — поддельные письма не блокируются.", domID)
 	}
 }
 

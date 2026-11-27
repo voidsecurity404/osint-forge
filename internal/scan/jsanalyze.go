@@ -147,11 +147,11 @@ func (s JSAnalyzeSource) Run(ctx context.Context, c *core.Collector) error {
 	}
 	for _, sec := range secrets {
 		c.Finding("high", "js-secret:"+sec.kind+":"+sec.sample,
-			"JS'da sir topildi: "+sec.kind,
-			"JavaScript faylida "+sec.kind+" ko'rinishidagi qiymat topildi (namuna: "+sec.sample+"). Amaldaligini tekshirib, kalitni aylantiring.",
+			"Секрет в JavaScript: "+sec.kind,
+			"В JavaScript-файле найдено значение, похожее на "+sec.kind+" (образец: "+sec.sample+"). Проверьте, действует ли ключ, и замените его.",
 			sec.js)
 	}
-	c.Log(core.LogInfo, "js-analyze: "+itoa(len(scripts))+" script, "+itoa(len(eps))+" endpoint, "+itoa(len(secrets))+" secret")
+	c.Log(core.LogInfo, "js-analyze: скриптов "+itoa(len(scripts))+", эндпоинтов "+itoa(len(eps))+", секретов "+itoa(len(secrets)))
 	c.Flush()
 	return nil
 }

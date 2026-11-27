@@ -87,7 +87,7 @@ func TestMonitorAlertsOnlyFilteredChanges(t *testing.T) {
 	noise := graph.Delta{Nodes: []*graph.Node{{ID: "root", Type: "domain"}, {ID: "url:https://example.com/a", Type: "url", Label: "/a"}}}
 	m.onScanDone(result(t, ScanRequest{Target: "example.com", Monitor: true}, noise, true))
 	expectNone(t, got, "url-only change")
-	if lc := m.List()[0].LastChange; !strings.Contains(lc, "filtr") {
+	if lc := m.List()[0].LastChange; !strings.Contains(lc, "фильтр") {
 		t.Fatalf("LastChange = %q", lc)
 	}
 

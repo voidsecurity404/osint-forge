@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app } from "../lib/state.svelte";
+  import { stageName } from "../lib/i18n";
 
   // Group by stage, preserving first-seen order.
   const stages = $derived.by(() => {
@@ -25,21 +26,21 @@
 
 <aside class="drawer">
   <div class="drawer-head">
-    <h2>⚙️ Manbalar (sources)</h2>
-    <button class="ghost sm" onclick={() => (app.drawer = null)} aria-label="Yopish">✕</button>
+    <h2>⚙️ Источники</h2>
+    <button class="ghost sm" onclick={() => (app.drawer = null)} aria-label="Закрыть">✕</button>
   </div>
   {#if app.timings.length === 0}
-    <p class="muted sm">Skan boshlanganda har bir manba (dns, nmap, fuzz…) qancha vaqt olgani va nechta element topgani shu yerda ko'rinadi.</p>
+    <p class="muted sm">Когда начнётся сканирование, здесь будет видно, сколько времени занял каждый источник (dns, nmap, fuzz…) и сколько элементов он нашёл.</p>
   {:else}
-    <p class="muted sm">Jami ish vaqti: {ms(totalMs)} (manbalar bosqich ichida parallel ishlaydi).</p>
+    <p class="muted sm">Суммарное время работы: {ms(totalMs)} (внутри этапа источники работают параллельно).</p>
     {#each stages as g}
-      <div class="src-stage">{g.stage}</div>
+      <div class="src-stage">{stageName(g.stage)}</div>
       <ul class="src-list">
         {#each g.items as t (t.name)}
           <li>
             <span class="src-ico">{icon[t.status] ?? "•"}</span>
             <span class="src-name" title={t.error ?? ""}>{t.name}</span>
-            <span class="src-add">+{t.nodes}n</span>
+            <span class="src-add">+{t.nodes} уз.</span>
             <span class="src-ms">{ms(t.durationMs)}</span>
           </li>
           {#if t.error}<li class="src-err">{t.error}</li>{/if}

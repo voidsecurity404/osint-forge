@@ -152,13 +152,13 @@ func (s BuiltinChecksSource) Run(ctx context.Context, c *core.Collector) error {
 					desc = t.Name
 				}
 				c.Finding(normaliseSeverity(t.Severity), "check:"+t.ID+":"+at,
-					t.Name+" ("+at+")", desc+"\n\nTopildi: "+at, baseID)
+					t.Name+" ("+at+")", desc+"\n\nНайдено: "+at, baseID)
 				c.Flush()
 			}(base, baseID, tmpls[i])
 		}
 	}
 	wg.Wait()
-	c.Log(core.LogInfo, "checks: "+itoa(count)+" match ("+itoa(len(tmpls))+" templates × "+itoa(len(bases))+" hosts)")
+	c.Log(core.LogInfo, "проверки: совпадений "+itoa(count)+" (шаблонов "+itoa(len(tmpls))+" × хостов "+itoa(len(bases))+")")
 	return nil
 }
 

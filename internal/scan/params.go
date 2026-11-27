@@ -142,7 +142,7 @@ func (s ParamSource) Run(ctx context.Context, c *core.Collector) error {
 		}
 		count++
 	}
-	c.Log(core.LogInfo, "params: "+itoa(count)+" unique query parameters")
+	c.Log(core.LogInfo, "параметры: уникальных параметров запроса "+itoa(count))
 	c.Flush()
 	return nil
 }

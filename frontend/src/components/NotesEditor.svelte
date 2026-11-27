@@ -26,7 +26,7 @@
     // target box right now.
     const target = app.graphTarget || app.target;
     if (!target.trim()) {
-      app.flash("ℹ️ Avval skanlang yoki tarixdan scan oching");
+      app.flash("ℹ️ Сначала выполните сканирование или откройте его из истории");
       return;
     }
     saving = true;
@@ -57,7 +57,7 @@
 </script>
 
 <div class="notes">
-  <h3 class="section">📝 Eslatma va teglar</h3>
+  <h3 class="section">📝 Заметки и теги</h3>
   <div class="tag-row">
     {#each TAGS as t}
       <button class="tag-btn tag-{t.key}" class:on={note.tags?.includes(t.key)} onclick={() => toggle(t.key)} disabled={saving}>
@@ -69,9 +69,9 @@
     bind:value={text}
     onblur={saveText}
     rows="3"
-    placeholder="Masalan: 403 bypass X-Original-URL bilan ishladi; payload…"
+    placeholder="Например: обход 403 через X-Original-URL сработал; payload…"
   ></textarea>
   <div class="note-meta">
-    {#if saving}Saqlanmoqda…{:else if savedAt}✅ Saqlandi {savedAt}{:else}Maydondan chiqqanda avtomatik saqlanadi{/if}
+    {#if saving}Сохранение…{:else if savedAt}✅ Сохранено {savedAt}{:else}Сохраняется автоматически при выходе из поля{/if}
   </div>
 </div>

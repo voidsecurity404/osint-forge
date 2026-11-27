@@ -114,7 +114,7 @@
       view.reset();
       app.refreshCounts();
       app.loadNotes(s.target);
-      if (s.monitor) app.flash("🔔 Monitoring skani boshlandi: " + s.target);
+      if (s.monitor) app.flash("🔔 Запущено сканирование мониторинга: " + s.target);
     });
     // The server graph was replaced (a stored scan was opened somewhere).
     const offReset = EventsOn("graph:reset", () => {
@@ -165,7 +165,7 @@
   async function start() {
     app.error = "";
     if (!app.target.trim()) {
-      app.error = "IP manzil yoki domen kiriting.";
+      app.error = "Введите IP-адрес или домен.";
       return;
     }
     scanGen++;
@@ -232,7 +232,7 @@
     ["csv", "CSV"],
     ["sarif", "SARIF"],
     ["json", "JSON"],
-    ["obsidian", "Obsidian vault (.zip)"],
+    ["obsidian", "Хранилище Obsidian (.zip)"],
   ];
 </script>
 
@@ -246,33 +246,33 @@
         type="text"
         bind:this={targetEl}
         bind:value={app.target}
-        placeholder="IP yoki domen kiriting — masalan 1.1.1.1 yoki example.com"
+        placeholder="Введите IP или домен — например, 1.1.1.1 или example.com"
         onkeydown={(e) => e.key === "Enter" && !app.running && start()}
         disabled={app.running}
       />
-      <label class="consent" title="Faqat o'zingizga tegishli yoki ruxsat berilgan nishonlarni skanerlang">
+      <label class="consent" title="Сканируйте только свои цели или цели, на которые есть разрешение">
         <input type="checkbox" bind:checked={app.consent} disabled={app.running} />
-        Aktiv skan — ruxsatim bor
+        Активное сканирование — есть разрешение
       </label>
       {#if app.running}
-        <button class="danger" onclick={cancel} disabled={app.cancelling}>{app.cancelling ? "To'xtatilmoqda…" : "To'xtatish"}</button>
+        <button class="danger" onclick={cancel} disabled={app.cancelling}>{app.cancelling ? "Остановка…" : "Остановить"}</button>
       {:else}
-        <button class="primary" onclick={start}>Skanlash</button>
+        <button class="primary" onclick={start}>Сканировать</button>
       {/if}
       <div class="viewswitch">
-        <button class:on={app.mode === "graph"} onclick={() => (app.mode = "graph")} title="Graf">🕸️</button>
-        <button class:on={app.mode === "table"} onclick={() => (app.mode = "table")} title="Jadval">▦</button>
-        <button class:on={app.mode === "gallery"} onclick={() => (app.mode = "gallery")} title="Skrinshotlar">🖼️</button>
+        <button class:on={app.mode === "graph"} onclick={() => (app.mode = "graph")} title="Граф">🕸️</button>
+        <button class:on={app.mode === "table"} onclick={() => (app.mode = "table")} title="Таблица">▦</button>
+        <button class:on={app.mode === "gallery"} onclick={() => (app.mode = "gallery")} title="Скриншоты">🖼️</button>
       </div>
       <div class="dropdown">
         <button
           class="ghost"
           disabled={app.running}
-          title="Hisobotni eksport qilish"
+          title="Экспорт отчёта"
           onclick={(e) => {
             e.stopPropagation();
             showExport = !showExport;
-          }}>⬇ Eksport ▾</button>
+          }}>⬇ Экспорт ▾</button>
         {#if showExport}
           <div class="menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
             {#each EXPORTS as [f, label]}
@@ -281,11 +281,11 @@
           </div>
         {/if}
       </div>
-      <button class="ghost" onclick={() => compareScans(app.graphTarget || app.target.trim())} disabled={app.running || !(app.graphTarget || app.target.trim())} title="Oxirgi ikki scan'ni grafda solishtirish">🔁 Diff</button>
-      <button class="ghost" class:on={app.drawer === "history"} onclick={() => app.toggleDrawer("history")} title="Scan tarixi">🕓 Tarix</button>
-      <button class="ghost" class:on={app.drawer === "monitor"} onclick={() => app.toggleDrawer("monitor")} title="Monitoring">🔔</button>
-      <button class="ghost" class:on={app.drawer === "sources"} onclick={() => app.toggleDrawer("sources")} title="Manbalar / vaqtlar">⚙️</button>
-      <button class="ghost" onclick={() => (showSettings = true)} title="Sozlamalar">⚙</button>
+      <button class="ghost" onclick={() => compareScans(app.graphTarget || app.target.trim())} disabled={app.running || !(app.graphTarget || app.target.trim())} title="Сравнить два последних сканирования на графе">🔁 Сравнить</button>
+      <button class="ghost" class:on={app.drawer === "history"} onclick={() => app.toggleDrawer("history")} title="История сканирований">🕓 История</button>
+      <button class="ghost" class:on={app.drawer === "monitor"} onclick={() => app.toggleDrawer("monitor")} title="Мониторинг">🔔</button>
+      <button class="ghost" class:on={app.drawer === "sources"} onclick={() => app.toggleDrawer("sources")} title="Источники / время">⚙️</button>
+      <button class="ghost" onclick={() => (showSettings = true)} title="Настройки">⚙</button>
     </div>
   </header>
 
@@ -299,7 +299,7 @@
       <div class="graph-search">
         <input
           type="search"
-          placeholder="🔍 Grafda qidirish…"
+          placeholder="🔍 Поиск по графу…"
           bind:value={graphSearch}
           oninput={runGraphSearch}
         />
@@ -310,19 +310,19 @@
 
     {#if app.diff}
       <div class="diff-banner" class:with-drawer={!!app.drawer}>
-        <span>🔁 <strong>{app.diff.target}</strong> — oldingi scan bilan farq:</span>
-        <span class="plus">+{app.diff.added} yangi</span>
-        <span class="minus">−{app.diff.removed} yo'qolgan</span>
-        <button class="ghost sm" onclick={exitDiff}>✕ Diffdan chiqish</button>
+        <span>🔁 <strong>{app.diff.target}</strong> — отличия от предыдущего сканирования:</span>
+        <span class="plus">+{app.diff.added} новых</span>
+        <span class="minus">−{app.diff.removed} исчезло</span>
+        <button class="ghost sm" onclick={exitDiff}>✕ Выйти из сравнения</button>
       </div>
     {/if}
 
     {#if app.mode === "graph"}
     <div class="zoom-controls">
-      <button title="Kattalashtirish" onclick={() => app.view?.zoomBy(1.25)}>＋</button>
-      <button title="Kichiklashtirish" onclick={() => app.view?.zoomBy(0.8)}>－</button>
-      <button title="Hammasini sig'dirish" onclick={() => app.view?.fit()}>⤢</button>
-      <button title="Qayta joylash" onclick={() => app.view?.relayout()}>↻</button>
+      <button title="Увеличить" onclick={() => app.view?.zoomBy(1.25)}>＋</button>
+      <button title="Уменьшить" onclick={() => app.view?.zoomBy(0.8)}>－</button>
+      <button title="Показать всё" onclick={() => app.view?.fit()}>⤢</button>
+      <button title="Разложить заново" onclick={() => app.view?.relayout()}>↻</button>
     </div>
     {/if}
 

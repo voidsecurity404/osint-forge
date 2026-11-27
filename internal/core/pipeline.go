@@ -167,9 +167,9 @@ func (p *Pipeline) Run(ctx context.Context, t Target) {
 				// recover, log it, and let the rest of the scan continue.
 				defer func() {
 					if r := recover(); r != nil {
-						c.Log(LogError, fmt.Sprintf("panic recovered: %v", r))
+						c.Log(LogError, fmt.Sprintf("перехвачена паника: %v", r))
 						c.Flush()
-						runErr = fmt.Errorf("panic: %v", r)
+						runErr = fmt.Errorf("паника: %v", r)
 						finish("error")
 					}
 				}()
@@ -178,7 +178,7 @@ func (p *Pipeline) Run(ctx context.Context, t Target) {
 					Phase: stageName[stage], Running: s.Name(),
 					Done: done, Total: total, Nodes: nodes, Edges: edges, StartedAt: started,
 				})
-				c.Log(LogInfo, "started")
+				c.Log(LogInfo, "запущен")
 				if err := s.Run(ctx, c); err != nil {
 					c.Log(LogError, err.Error())
 					runErr = err

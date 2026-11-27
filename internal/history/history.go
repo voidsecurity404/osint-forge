@@ -17,7 +17,7 @@ import (
 )
 
 // ErrNoScans is returned when a target has no stored scans.
-var ErrNoScans = errors.New("bu nishon uchun saqlangan scan yo'q — avval skanlang")
+var ErrNoScans = errors.New("для этой цели нет сохранённых сканирований — сначала выполните сканирование")
 
 // maxScansPerTarget caps how many scans are kept per target; the oldest are
 // pruned. Identical consecutive scans also replace each other (see Save), so
@@ -370,7 +370,7 @@ func Load(target, id string) (graph.Delta, error) {
 	data, err := os.ReadFile(filepath.Join(dir, id+".json"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return graph.Delta{}, errors.New("scan topilmadi")
+			return graph.Delta{}, errors.New("сканирование не найдено")
 		}
 		return graph.Delta{}, err
 	}
@@ -411,7 +411,7 @@ func Delete(target, id string) error {
 	}
 	if err := os.Remove(filepath.Join(dir, id+".json")); err != nil {
 		if os.IsNotExist(err) {
-			return errors.New("scan topilmadi")
+			return errors.New("сканирование не найдено")
 		}
 		return err
 	}

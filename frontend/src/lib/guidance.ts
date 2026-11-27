@@ -1,100 +1,100 @@
-// "Keyingi qadam" — teaching mode. For a node it answers: nega muhim, qo'lda
-// nimani TEKSHIRISH kerak, qaysi vositalar bilan. Matn o'zbekcha. Mazmun
-// avtorizatsiyalangan test uchun: zaiflikni ANIQLASH/TASDIQLASH yo'nalishida,
-// bosqichma-bosqich ekspluatatsiya ko'rsatmasi emas.
+// «Следующий шаг» — обучающий режим. Для узла отвечает: почему это важно, что
+// ПРОВЕРИТЬ вручную и какими инструментами. Содержание рассчитано на
+// авторизованное тестирование: направление — ОБНАРУЖИТЬ/ПОДТВЕРДИТЬ уязвимость,
+// а не пошаговая инструкция по эксплуатации.
 import type { graph } from "./models";
 import { statusOf } from "./graph";
 
 export interface Guide {
   title: string;
   why: string;
-  checks: string[]; // qo'lda tekshirish punktlari
+  checks: string[]; // пункты ручной проверки
   tools?: string[];
 }
 
-const SCOPE = "Faqat yozma ruxsat (scope) ichidagi nishonda.";
+const SCOPE = "Только для целей в пределах письменного разрешения (scope).";
 
-// Port → nega internetga ochiq bo'lmasligi kerak + tekshirish punktlari.
+// Порт → почему он не должен быть открыт в интернет + что проверить.
 const PORTS: Record<string, Guide> = {
-  "21": { title: "FTP (21)", why: "Ko'pincha anonim kirish yoqilgan va trafik shifrlanmagan.", checks: ["Anonim kirish yoqilganmi?", "Banner versiyasi ma'lum zaiflikka tegishlimi (CVE paneli)."], tools: ["nmap --script ftp-anon", "searchsploit"] },
-  "22": { title: "SSH (22)", why: "Masofaviy kirish nuqtasi; eski versiya yoki zaif sozlama xavf tug'diradi.", checks: ["Versiya va qo'llab-quvvatlanadigan algoritmlar zamonaviymi?", "Parol bilan kirish yoqilganmi yoki faqat kalitmi?"], tools: ["ssh-audit", "nmap --script ssh2-enum-algos"] },
-  "23": { title: "Telnet (23)", why: "Trafik to'liq shifrlanmagan — zamonaviy tarmoqda bo'lmasligi kerak.", checks: ["Nega SSH o'rniga Telnet ishlatilyapti?", "Qurilma turi va versiyasi."], tools: ["nmap --script telnet-ntlm-info"] },
-  "25": { title: "SMTP (25)", why: "Noto'g'ri sozlanganda open relay yoki foydalanuvchi nomlarini oshkor qilishi mumkin.", checks: ["Open relay sinovi.", "VRFY/EXPN buyruqlari o'chirilganmi?", "STARTTLS mavjudmi?"], tools: ["nmap --script smtp-open-relay,smtp-commands", "swaks"] },
-  "53": { title: "DNS (53)", why: "Zone transfer (AXFR) ochiq bo'lsa, butun ichki xarita oshkor bo'ladi.", checks: ["AXFR ruxsat etilganmi? (bu dastur avtomatik sinaydi)", "Recursion tashqaridan ochiqmi?"], tools: ["dig", "dnsrecon"] },
-  "139": { title: "SMB (139)", why: "Eski SMBv1 va anonim kirish xavfli.", checks: ["Null session ruxsat etilganmi?", "SMBv1 o'chirilganmi?"], tools: ["enum4linux-ng", "nmap --script smb-protocols"] },
-  "445": { title: "SMB (445)", why: "Windows tarmoqlarida tez-tez noto'g'ri sozlanadi (ochiq share, imzolamaslik).", checks: ["SMB signing majburiymi?", "Guest/null orqali share'lar ko'rinadimi?", "Versiya ma'lum zaiflikka tegishlimi."], tools: ["nmap --script smb-protocols,smb2-security-mode", "enum4linux-ng"] },
-  "1433": { title: "MS SQL (1433)", why: "Ma'lumotlar bazasi internetga ochiq bo'lmasligi kerak.", checks: ["Baza nega tashqaridan ko'rinyapti?", "Versiya va shifrlash."], tools: ["nmap --script ms-sql-info"] },
-  "3306": { title: "MySQL (3306)", why: "Baza internetga ochiq — noto'g'ri sozlama.", checks: ["Nega tashqaridan ulanish mumkin?", "Versiya va auth plagini."], tools: ["nmap --script mysql-info"] },
-  "3389": { title: "RDP (3389)", why: "Parol hujumlari va ma'lum kritik zaifliklar nishoni.", checks: ["NLA (Network Level Authentication) yoqilganmi?", "Versiya ma'lum zaiflikka tegishlimi (CVE paneli)."], tools: ["nmap --script rdp-ntlm-info,rdp-enum-encryption"] },
-  "5432": { title: "PostgreSQL (5432)", why: "Baza internetga ochiq bo'lmasligi kerak.", checks: ["Nega tashqaridan ko'rinadi?", "Versiya."], tools: ["nmap --script pgsql-brute"] },
-  "6379": { title: "Redis (6379)", why: "Odatda autentifikatsiyasiz keladi — ma'lumot oshkor bo'lishi mumkin.", checks: ["Auth talab qilinadimi?", "Internetga nega ochiq?"], tools: ["nmap --script redis-info"] },
-  "9200": { title: "Elasticsearch (9200)", why: "Ko'pincha auth'siz — indeks ma'lumotlari oshkor bo'ladi.", checks: ["Auth yoqilganmi?", "Ma'lumotni yuklab olmang — faqat mavjudligini qayd eting."], tools: ["curl"] },
-  "27017": { title: "MongoDB (27017)", why: "Eski sozlamada auth o'chiq bo'lishi mumkin.", checks: ["Auth yoqilganmi?", "Internetga nega ochiq?"], tools: ["nmap --script mongodb-info"] },
+  "21": { title: "FTP (21)", why: "Часто включён анонимный вход, а трафик не шифруется.", checks: ["Разрешён ли анонимный вход?", "Относится ли версия из баннера к известной уязвимости (панель CVE)?"], tools: ["nmap --script ftp-anon", "searchsploit"] },
+  "22": { title: "SSH (22)", why: "Точка удалённого доступа; старая версия или слабая настройка создают риск.", checks: ["Современны ли версия и поддерживаемые алгоритмы?", "Разрешён ли вход по паролю или только по ключу?"], tools: ["ssh-audit", "nmap --script ssh2-enum-algos"] },
+  "23": { title: "Telnet (23)", why: "Трафик полностью не шифруется — в современной сети его быть не должно.", checks: ["Почему используется Telnet вместо SSH?", "Тип и версия устройства."], tools: ["nmap --script telnet-ntlm-info"] },
+  "25": { title: "SMTP (25)", why: "При неверной настройке возможен open relay или раскрытие имён пользователей.", checks: ["Проверка на open relay.", "Отключены ли команды VRFY/EXPN?", "Есть ли STARTTLS?"], tools: ["nmap --script smtp-open-relay,smtp-commands", "swaks"] },
+  "53": { title: "DNS (53)", why: "Открытый перенос зоны (AXFR) раскрывает всю внутреннюю карту имён.", checks: ["Разрешён ли AXFR? (программа проверяет это автоматически)", "Открыта ли рекурсия снаружи?"], tools: ["dig", "dnsrecon"] },
+  "139": { title: "SMB (139)", why: "Старый SMBv1 и анонимный доступ опасны.", checks: ["Разрешена ли null-сессия?", "Отключён ли SMBv1?"], tools: ["enum4linux-ng", "nmap --script smb-protocols"] },
+  "445": { title: "SMB (445)", why: "В сетях Windows часто настроен неверно (открытые шары, нет подписи).", checks: ["Обязательна ли подпись SMB?", "Видны ли шары через guest/null?", "Относится ли версия к известной уязвимости?"], tools: ["nmap --script smb-protocols,smb2-security-mode", "enum4linux-ng"] },
+  "1433": { title: "MS SQL (1433)", why: "База данных не должна быть доступна из интернета.", checks: ["Почему база видна снаружи?", "Версия и шифрование."], tools: ["nmap --script ms-sql-info"] },
+  "3306": { title: "MySQL (3306)", why: "База открыта в интернет — ошибка конфигурации.", checks: ["Почему возможно подключение снаружи?", "Версия и плагин аутентификации."], tools: ["nmap --script mysql-info"] },
+  "3389": { title: "RDP (3389)", why: "Мишень для подбора паролей и известных критических уязвимостей.", checks: ["Включён ли NLA (Network Level Authentication)?", "Относится ли версия к известной уязвимости (панель CVE)?"], tools: ["nmap --script rdp-ntlm-info,rdp-enum-encryption"] },
+  "5432": { title: "PostgreSQL (5432)", why: "База данных не должна быть доступна из интернета.", checks: ["Почему она видна снаружи?", "Версия."], tools: ["nmap --script pgsql-brute"] },
+  "6379": { title: "Redis (6379)", why: "Часто работает без аутентификации — данные могут быть раскрыты.", checks: ["Требуется ли аутентификация?", "Почему открыт в интернет?"], tools: ["nmap --script redis-info"] },
+  "9200": { title: "Elasticsearch (9200)", why: "Часто без авторизации — данные индексов раскрываются.", checks: ["Включена ли авторизация?", "Не скачивайте данные — только зафиксируйте факт доступности."], tools: ["curl"] },
+  "27017": { title: "MongoDB (27017)", why: "В старых конфигурациях аутентификация может быть выключена.", checks: ["Включена ли аутентификация?", "Почему открыт в интернет?"], tools: ["nmap --script mongodb-info"] },
 };
 
 const WEB_PORT: Guide = {
-  title: "Web servis",
-  why: "Web ilovalar eng katta hujum yuzasi: yashirin yo'llar, eski komponentlar, auth xatolari.",
-  checks: ["Texnologiya va versiyani aniqlang (eski komponent CVE paneliga tushadi).", "robots.txt, sitemap, /.git/, /.env, admin panellarini tekshiring.", "Trafikni Burp orqali ko'rib, parametrlarni belgilang."],
+  title: "Веб-сервис",
+  why: "Веб-приложения — самая большая поверхность атаки: скрытые пути, устаревшие компоненты, ошибки авторизации.",
+  checks: ["Определите технологию и версию (устаревший компонент попадёт в панель CVE).", "Проверьте robots.txt, sitemap, /.git/, /.env и админ-панели.", "Просмотрите трафик через Burp и отметьте параметры."],
   tools: ["Burp Suite", "nuclei", "whatweb"],
 };
 
 function statusGuide(code: number): Guide | null {
   if (code === 401 || code === 403) {
     return {
-      title: `${code} — kirish cheklangan`,
-      why: "Himoyalangan resurs mavjudligini bildiradi. Kirish mantig'i to'g'ri sozlanganini tekshirish kerak.",
-      checks: ["Qanday auth turi ishlatilmoqda (Basic, token, form)?", "Resurs boshqa yo'l orqali ham ochiladimi?", "Xato sahifasi ortiqcha ma'lumot (versiya, stack) oshkor qiladimi?"],
+      title: `${code} — доступ ограничен`,
+      why: "Ресурс защищён и существует. Нужно проверить, правильно ли настроена логика доступа.",
+      checks: ["Какой тип аутентификации используется (Basic, токен, форма)?", "Открывается ли ресурс по другому пути?", "Раскрывает ли страница ошибки лишнее (версии, стек)?"],
       tools: ["Burp Suite"],
     };
   }
   if (code >= 500) {
     return {
-      title: `${code} — server xatosi`,
-      why: "Server ichki xatosi ko'pincha noto'g'ri ishlov berilgan kirish belgisidir; xato xabari ma'lumot oshkor qilishi mumkin.",
-      checks: ["Javobda stack trace, yo'l yoki versiya ko'rinadimi?", "Qaysi so'rov bu xatoni keltirib chiqardi — qayd eting."],
+      title: `${code} — ошибка сервера`,
+      why: "Внутренняя ошибка сервера часто означает неверную обработку ввода; текст ошибки может раскрыть данные.",
+      checks: ["Видны ли в ответе стек вызовов, пути или версии?", "Зафиксируйте, какой запрос вызвал ошибку."],
       tools: ["Burp Suite"],
     };
   }
   if (code >= 300 && code < 400) {
     return {
-      title: `${code} — yo'naltirish`,
-      why: "Redirect manzili boshqa yo'l yoki hostni oshkor qilishi mumkin.",
-      checks: ["`location` qayerga ishora qiladi?", "Yo'naltirish foydalanuvchi kiritgan qiymatga bog'liqmi (open redirect)?"],
+      title: `${code} — перенаправление`,
+      why: "Адрес перенаправления может раскрыть другой путь или хост.",
+      checks: ["Куда указывает `location`?", "Зависит ли перенаправление от данных пользователя (open redirect)?"],
     };
   }
   return null;
 }
 
 const FINDING: Record<string, Guide> = {
-  "git-exposed": { title: ".git papkasi ochiq", why: "Ochiq .git butun manba kodini va tarixini (ba'zan sirlarni) tiklashga imkon beradi.", checks: ["Kodni tiklab, ichida sir/parol bor-yo'qligini tekshiring.", "Commit tarixida o'chirilgan maxfiy ma'lumotni qidiring."], tools: ["git-dumper", "trufflehog"] },
-  "env-exposed": { title: ".env fayli ochiq", why: ".env odatda baza parollari, API kalitlari va maxfiylarni saqlaydi.", checks: ["Qaysi kalitlar oshkor bo'ldi?", "Topilgan sirlar amaldaligini (ruxsat bilan) baholang va tezda aylantirishni tavsiya eting."], tools: ["curl"] },
-  "cors": { title: "CORS noto'g'ri sozlangan", why: "Juda ochiq CORS boshqa sayt foydalanuvchi ma'lumotini o'qishiga yo'l qo'yishi mumkin.", checks: ["`Access-Control-Allow-Origin` ixtiyoriy Origin'ni aks ettiradimi?", "`Allow-Credentials: true` bilan birga kelganmi?"], tools: ["curl", "Burp Suite"] },
-  "dirlisting": { title: "Katalog ro'yxati ochiq", why: "Server papka ichidagi fayllar ro'yxatini ko'rsatmoqda — zaxira, log yoki maxfiy fayllar chiqishi mumkin.", checks: ["Papkada maxfiy fayl (zaxira, .bak, log) bormi?"] },
-  "takeover": { title: "Subdomain takeover ehtimoli", why: "Egasiz tashqi resursga ishora qiluvchi subdomen o'zlashtirilib, saytingiz nomidan foydalanilishi mumkin.", checks: ["CNAME qaysi xizmatga ishora qiladi?", "O'sha resurs haqiqatan egasizmi (xizmat hujjatiga ko'ra tasdiqlang)."] },
-  "weak-tls": { title: "Eski TLS protokoli", why: "TLS 1.0/1.1 zamonaviy hisoblanmaydi va o'chirilishi kerak.", checks: ["Qaysi protokol/shifrlar yoqilgan?", "TLS 1.2+ ga o'tkazishni tavsiya eting."], tools: ["testssl.sh", "sslscan"] },
-  "cert-expired": { title: "Sertifikat muddati o'tgan", why: "Muddati o'tgan sertifikat foydalanuvchilarga ogohlantirish beradi va xizmat ishonchini pasaytiradi.", checks: ["Qachon tugagan?", "Yangilashni tavsiya eting."] },
-  "spf-missing": { title: "SPF yozuvi yo'q", why: "SPF bo'lmasa, domen nomidan soxta xat (spoofing) yuborish osonlashadi.", checks: ["DNS'ga to'g'ri SPF yozuvi qo'shishni tavsiya eting."] },
-  "dmarc-missing": { title: "DMARC yozuvi yo'q", why: "DMARC email autentifikatsiyasini kuchaytiradi va spoofing'ni cheklaydi.", checks: ["DMARC siyosatini qo'shishni tavsiya eting."] },
-  "hibp": { title: "Email buzilgan bazalarda", why: "Oshkor bo'lgan email parol qayta ishlatilsa hisob egalanishi mumkin.", checks: ["Xodimlarga parol almashtirish va 2FA ni tavsiya eting."] },
-  "github": { title: "Domen GitHub kodida eslatilgan", why: "Ommaviy repozitoriylardagi config/skriptlarda ichki hostlar, kalit yoki parollar sizib chiqqan bo'lishi mumkin.", checks: ["Ko'rsatilgan repo va fayllarni ko'rib chiqing: sir, ichki manzil bormi?", "Topilgan kalit amaldaligini (ruxsat bilan) baholang va aylantirishni tavsiya eting."], tools: ["trufflehog", "gitleaks"] },
-  "cert-expiring": { title: "Sertifikat tez tugaydi", why: "Yangilanmasa, yaqin kunlarda foydalanuvchilar xavfsizlik ogohlantirishini ko'radi.", checks: ["Tugash sanasi va avtomatik yangilanish (ACME/certbot) sozlanganmi?"] },
-  "spf-weak": { title: "SPF juda ochiq (+all)", why: "'+all' har qanday serverga domen nomidan xat yuborishga ruxsat beradi — SPF amalda o'chiq.", checks: ["SPF'ni '-all' yoki '~all' bilan tugatishni tavsiya eting."], tools: ["dig TXT"] },
-  "dmarc-none": { title: "DMARC p=none", why: "Kuzatuv rejimi: soxta xatlar haqida hisobot keladi, lekin ular bloklanmaydi.", checks: ["Hisobotlarni tahlil qilib, p=quarantine yoki p=reject ga o'tishni tavsiya eting."] },
-  "axfr": { title: "Zone transfer (AXFR) ochiq", why: "Name server butun DNS zonasini istalgan kishiga beradi — barcha ichki host nomlari oshkor.", checks: ["Qaysi name server(lar) javob berdi?", "AXFR'ni faqat ishonchli ikkilamchi serverlarga cheklashni tavsiya eting."], tools: ["dig AXFR"] },
-  "http-methods": { title: "Xavfli HTTP metodlar", why: "PUT/DELETE/TRACE kabi metodlar noto'g'ri sozlanganda fayl yozish yoki XST'ga yo'l ochadi.", checks: ["Allow sarlavhasi haqiqatan ishlaydimi yoki faqat e'lon qilinganmi (ruxsat bilan sinang)?", "Keraksiz metodlarni o'chirishni tavsiya eting."], tools: ["curl -X OPTIONS -i"] },
-  "js-secret": { title: "JavaScript'da sir", why: "Brauzerga yuboriladigan JS'dagi kalitni istalgan tashrif buyuruvchi o'qiy oladi.", checks: ["Kalit amaldami va qanday huquqlarga ega (ruxsat bilan baholang)?", "Kalitni aylantirib, backend'ga ko'chirishni tavsiya eting."], tools: ["trufflehog"] },
-  "check": { title: "Oshkor resurs (ichki shablon)", why: "Admin panel, debug endpoint yoki zaxira fayl internetdan ochiq ko'rinmoqda.", checks: ["Sahifani ochib, haqiqatan oshkor ekanini tasdiqlang (yolg'on ijobiyni istisno eting).", "Kirish cheklovi qo'yish yoki o'chirishni tavsiya eting."], tools: ["curl", "Burp Suite"] },
-  "nuclei": { title: "Nuclei topilmasi", why: "ProjectDiscovery shabloni mos keldi — tafsilot shablon ID'sida.", checks: ["Shablon ID bo'yicha hujjatni o'qing va natijani qo'lda tasdiqlang."], tools: ["nuclei -id <template> -u <url>"] },
+  "git-exposed": { title: "Открыта папка .git", why: "Открытый .git позволяет восстановить весь исходный код и историю (иногда с секретами).", checks: ["Восстановите код и проверьте его на секреты/пароли.", "Поищите удалённые секреты в истории коммитов."], tools: ["git-dumper", "trufflehog"] },
+  "env-exposed": { title: "Открыт файл .env", why: ".env обычно хранит пароли к БД, ключи API и прочие секреты.", checks: ["Какие ключи раскрыты?", "Оцените (с разрешения), действуют ли найденные секреты, и рекомендуйте срочно их сменить."], tools: ["curl"] },
+  "cors": { title: "CORS настроен неверно", why: "Слишком открытый CORS позволяет другому сайту читать данные пользователя.", checks: ["Отражает ли `Access-Control-Allow-Origin` произвольный Origin?", "Приходит ли вместе с ним `Allow-Credentials: true`?"], tools: ["curl", "Burp Suite"] },
+  "dirlisting": { title: "Открыт листинг каталога", why: "Сервер показывает список файлов в папке — могут найтись резервные копии, логи или секретные файлы.", checks: ["Есть ли в папке секретные файлы (резервные копии, .bak, логи)?"] },
+  "takeover": { title: "Возможен захват поддомена", why: "Поддомен, указывающий на невостребованный внешний ресурс, можно захватить и использовать от имени вашего сайта.", checks: ["На какой сервис указывает CNAME?", "Действительно ли ресурс никому не принадлежит (подтвердите по документации сервиса)?"] },
+  "weak-tls": { title: "Устаревший протокол TLS", why: "TLS 1.0/1.1 не считаются современными и должны быть отключены.", checks: ["Какие протоколы и шифры включены?", "Рекомендуйте перейти на TLS 1.2+."], tools: ["testssl.sh", "sslscan"] },
+  "cert-expired": { title: "Срок действия сертификата истёк", why: "Просроченный сертификат вызывает предупреждения у пользователей и снижает доверие к сервису.", checks: ["Когда он истёк?", "Рекомендуйте обновить сертификат."] },
+  "cert-expiring": { title: "Сертификат скоро истечёт", why: "Если его не обновить, в ближайшие дни пользователи увидят предупреждение безопасности.", checks: ["Дата окончания и настроено ли автообновление (ACME/certbot)?"] },
+  "spf-missing": { title: "Нет записи SPF", why: "Без SPF проще отправлять поддельные письма от имени домена (spoofing).", checks: ["Рекомендуйте добавить корректную запись SPF в DNS."] },
+  "spf-weak": { title: "SPF слишком открыт (+all)", why: "'+all' разрешает любому серверу отправлять письма от имени домена — SPF фактически отключён.", checks: ["Рекомендуйте завершать SPF на '-all' или '~all'."], tools: ["dig TXT"] },
+  "dmarc-missing": { title: "Нет записи DMARC", why: "DMARC усиливает аутентификацию почты и ограничивает подделку писем.", checks: ["Рекомендуйте добавить политику DMARC."] },
+  "dmarc-none": { title: "DMARC p=none", why: "Режим мониторинга: отчёты о поддельных письмах приходят, но сами письма не блокируются.", checks: ["Проанализируйте отчёты и рекомендуйте перейти на p=quarantine или p=reject."] },
+  "axfr": { title: "Открыт перенос зоны (AXFR)", why: "Сервер имён отдаёт всю зону DNS любому — раскрываются все внутренние имена хостов.", checks: ["Какие серверы имён ответили?", "Рекомендуйте разрешить AXFR только доверенным вторичным серверам."], tools: ["dig AXFR"] },
+  "http-methods": { title: "Опасные HTTP-методы", why: "PUT/DELETE/TRACE при неверной настройке открывают запись файлов или XST.", checks: ["Работают ли методы из Allow на самом деле или только объявлены (проверяйте с разрешения)?", "Рекомендуйте отключить ненужные методы."], tools: ["curl -X OPTIONS -i"] },
+  "js-secret": { title: "Секрет в JavaScript", why: "Ключ в JS, который отдаётся браузеру, может прочитать любой посетитель.", checks: ["Действует ли ключ и какие у него права (оценивайте с разрешения)?", "Рекомендуйте сменить ключ и перенести его на бэкенд."], tools: ["trufflehog"] },
+  "check": { title: "Открытый ресурс (встроенный шаблон)", why: "Админ-панель, отладочный эндпоинт или резервный файл доступны из интернета.", checks: ["Откройте страницу и подтвердите, что ресурс действительно открыт (исключите ложное срабатывание).", "Рекомендуйте ограничить доступ или удалить ресурс."], tools: ["curl", "Burp Suite"] },
+  "nuclei": { title: "Находка Nuclei", why: "Сработал шаблон ProjectDiscovery — подробности в идентификаторе шаблона.", checks: ["Прочитайте документацию по ID шаблона и подтвердите результат вручную."], tools: ["nuclei -id <template> -u <url>"] },
+  "hibp": { title: "Email найден в утечках", why: "Если утёкший пароль используется повторно, учётную запись могут захватить.", checks: ["Рекомендуйте сотрудникам сменить пароли и включить 2FA."] },
+  "github": { title: "Домен упоминается в коде на GitHub", why: "В конфигах и скриптах публичных репозиториев могли утечь внутренние хосты, ключи или пароли.", checks: ["Просмотрите указанные репозитории и файлы: есть ли секреты, внутренние адреса?", "Оцените (с разрешения), действует ли найденный ключ, и рекомендуйте его сменить."], tools: ["trufflehog", "gitleaks"] },
 };
 
 const NODE_TYPE: Record<string, Guide> = {
-  param: { title: "URL parametri", why: "Foydalanuvchi kiritadigan parametrlar in'ektsiya va mantiq xatolarining asosiy kirish nuqtasi.", checks: ["Nomi qaysi sinovga ishora qiladi (panelda ko'rsatilgan)?", "Qiymatni Burp'da o'zgartirib, javob farqini kuzating.", "SQLi/XSS/redirect uchun qo'lda sinang (faqat scope ichida)."], tools: ["Burp Suite", "sqlmap", "ffuf"] },
-  bucket: { title: "Bulut bucket", why: "Ochiq S3/GCS/Azure bucket maxfiy fayllarni oshkor qilishi yoki yozishga ruxsat berishi mumkin.", checks: ["Ro'yxat (listing) ochiqmi?", "Yozish huquqi bormi (ruxsat bilan)?"], tools: ["aws s3 ls", "gsutil"] },
-  email: { title: "Email manzil", why: "Ijtimoiy injiniring va buzilgan baza tekshiruvi uchun foydali.", checks: ["Buzilgan bazalarda bormi (HIBP)?", "Qaysi xodim/rolga tegishli?"] },
-  cve: { title: "Ma'lum zaiflik (CVE)", why: "Aniqlangan versiyaga mos keluvchi ommaviy zaiflik.", checks: ["Versiya haqiqatan mosmi (yolg'on ijobiyni istisno eting)?", "KEV/EPSS bo'yicha ustuvorlikni baholang.", "Rasmiy yangilanish/patch mavjudmi."], tools: ["searchsploit", "nuclei"] },
-  certificate: { title: "TLS sertifikat", why: "SAN maydonidagi domenlar yangi ichki hostlarni oshkor qilishi mumkin.", checks: ["SAN'da yangi subdomenlar bormi?", "Muddati va chiqaruvchisi."] },
-  asn: { title: "ASN (tarmoq)", why: "Bir ASN ostidagi IP bloklari odatda bitta tashkilotniki — qamrovni kengaytiradi.", checks: ["Bu ASN'dagi boshqa IP bloklari ham scope ichidami?"] },
+  param: { title: "Параметр URL", why: "Параметры, которые задаёт пользователь, — главная точка входа для инъекций и логических ошибок.", checks: ["На какую проверку указывает имя (показано в панели)?", "Меняйте значение в Burp и наблюдайте за разницей в ответе.", "Проверьте вручную на SQLi/XSS/redirect (только в пределах scope)."], tools: ["Burp Suite", "sqlmap", "ffuf"] },
+  bucket: { title: "Облачный бакет", why: "Открытый бакет S3/GCS/Azure может раскрыть секретные файлы или разрешить запись.", checks: ["Открыт ли листинг?", "Есть ли права на запись (проверяйте с разрешения)?"], tools: ["aws s3 ls", "gsutil"] },
+  email: { title: "Email-адрес", why: "Полезен для социальной инженерии и проверки по базам утечек.", checks: ["Есть ли он в утечках (HIBP)?", "Какому сотруднику/роли он принадлежит?"] },
+  cve: { title: "Известная уязвимость (CVE)", why: "Публичная уязвимость, соответствующая обнаруженной версии.", checks: ["Действительно ли версия совпадает (исключите ложное срабатывание)?", "Оцените приоритет по KEV/EPSS.", "Есть ли официальное обновление/патч?"], tools: ["searchsploit", "nuclei"] },
+  certificate: { title: "TLS-сертификат", why: "Домены в поле SAN могут раскрыть новые внутренние хосты.", checks: ["Есть ли в SAN новые поддомены?", "Срок действия и издатель."] },
+  asn: { title: "ASN (сеть)", why: "Блоки IP одной ASN обычно принадлежат одной организации — это расширяет охват.", checks: ["Входят ли другие блоки IP этой ASN в scope?"] },
 };
 
 export function guideFor(n: graph.Node): Guide | null {

@@ -152,7 +152,7 @@ func (m *Monitor) Add(target string, intervalMin int, consent bool) (Watch, erro
 func (m *Monitor) AddWatch(target string, intervalMin int, consent bool, filter AlertFilter) (Watch, error) {
 	t := core.ParseTarget(target)
 	if !t.Valid {
-		return Watch{}, fmt.Errorf("noto'g'ri nishon")
+		return Watch{}, fmt.Errorf("неверная цель")
 	}
 	label := labelOf(t)
 	if intervalMin < minIntervalMin {
@@ -205,7 +205,7 @@ func (m *Monitor) tick(now time.Time) {
 			if busy {
 				return // a scan is running; retry on the next tick
 			}
-			m.setLastChange(w.Target, "skan boshlanmadi: "+err.Error())
+			m.setLastChange(w.Target, "сканирование не запустилось: "+err.Error())
 		}
 		m.mu.Lock()
 		if cur := m.watches[w.Target]; cur != nil {
@@ -239,7 +239,7 @@ func (m *Monitor) onScanDone(res ScanResult) {
 	label := labelOf(core.ParseTarget(res.Request.Target))
 	if !res.Complete {
 		// Cancelled or out of time: missing entities are not "removed".
-		m.setLastChange(label, "skan to'liq tugamadi — taqqoslanmadi")
+		m.setLastChange(label, "сканирование не завершилось полностью — сравнение не выполнялось")
 		return
 	}
 	m.mu.Lock()
@@ -251,18 +251,18 @@ func (m *Monitor) onScanDone(res ScanResult) {
 	all := res.Diff
 	diff := filter.Apply(all)
 	if !diff.HasPrevious {
-		m.setLastChange(label, "birinchi skan saqlandi")
+		m.setLastChange(label, "первое сканирование сохранено")
 		return
 	}
 	if len(all.Added) == 0 && len(all.Removed) == 0 {
-		m.setLastChange(label, "o'zgarishsiz")
+		m.setLastChange(label, "без изменений")
 		return
 	}
 	if len(diff.Added) == 0 && len(diff.Removed) == 0 {
-		m.setLastChange(label, fmt.Sprintf("+%d / −%d o'zgarish bor, lekin filtrga mos emas — xabar yuborilmadi", len(all.Added), len(all.Removed)))
+		m.setLastChange(label, fmt.Sprintf("есть изменения (+%d / −%d), но они не проходят фильтр — уведомление не отправлено", len(all.Added), len(all.Removed)))
 		return
 	}
-	m.setLastChange(label, fmt.Sprintf("+%d yangi, −%d yo'qolgan", len(diff.Added), len(diff.Removed)))
+	m.setLastChange(label, fmt.Sprintf("+%d новых, −%d исчезло", len(diff.Added), len(diff.Removed)))
 
 	m.app.mu.Lock()
 	cfg := m.app.cfg
@@ -275,14 +275,14 @@ func (m *Monitor) onScanDone(res ScanResult) {
 	defer cancel()
 	if err := notify.Send(ctx, nc, formatAlert(label, diff)); err != nil {
 		log.Printf("monitor: %v", err)
-		m.setLastChange(label, "xabar yuborilmadi: "+err.Error())
+		m.setLastChange(label, "уведомление не отправлено: "+err.Error())
 	}
 }
 
 func formatAlert(target string, d history.Diff) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "🕸️ osint-forge — %s da o'zgarish\n", target)
-	fmt.Fprintf(&b, "+%d yangi, −%d yo'qolgan\n", len(d.Added), len(d.Removed))
+	fmt.Fprintf(&b, "🕸️ osint-forge — изменения на %s\n", target)
+	fmt.Fprintf(&b, "+%d новых, −%d исчезло\n", len(d.Added), len(d.Removed))
 	n := 0
 	for _, node := range d.Added {
 		if n >= 15 {

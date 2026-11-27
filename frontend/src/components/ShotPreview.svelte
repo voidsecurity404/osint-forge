@@ -1,6 +1,6 @@
 <script lang="ts">
   // Screenshot of the page behind a node, shown in the detail panel right under
-  // "Brauzerda ochish / HTML ko'rish".
+  // «Открыть в браузере / Показать HTML».
   //  - URL nodes: the stored screenshot, or one taken on demand. Pages the scan
   //    already requested are captured automatically; pages it never touched
   //    (wayback, sitemap, JS) need a click, so a passive scan stays passive.
@@ -78,10 +78,10 @@
     const t = Date.parse(iso);
     if (isNaN(t)) return "";
     const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-    if (s < 60) return "hozirgina";
-    if (s < 3600) return `${Math.round(s / 60)} daqiqa oldin`;
-    if (s < 86400) return `${Math.round(s / 3600)} soat oldin`;
-    if (s < 7 * 86400) return `${Math.round(s / 86400)} kun oldin`;
+    if (s < 60) return "только что";
+    if (s < 3600) return `${Math.round(s / 60)} мин. назад`;
+    if (s < 86400) return `${Math.round(s / 3600)} ч. назад`;
+    if (s < 7 * 86400) return `${Math.round(s / 86400)} дн. назад`;
     return new Date(t).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
   }
 </script>
@@ -91,39 +91,39 @@
     {#if st.kind === "loading"}
       <div class="shot-frame shot-msg">
         <span class="spinner" aria-hidden="true"></span>
-        <span>Sahifa skrinshoti olinmoqda…</span>
-        <small>odatda 1–10 soniya, sekin saytlarda 30 soniyagacha</small>
+        <span>Снимаем скриншот страницы…</span>
+        <small>обычно меньше секунды, на медленных сайтах — несколько секунд</small>
       </div>
     {:else if st.kind === "ready"}
       {@const src = screenshotURL(st.path, st.takenAt)}
-      <a class="shot-frame" href={src} target="_blank" rel="noopener" title="To'liq o'lchamda ochish">
+      <a class="shot-frame" href={src} target="_blank" rel="noopener" title="Открыть в полном размере">
         <img
           {src}
-          alt="Sahifa skrinshoti"
-          onerror={() => (st = { kind: "error", msg: "Rasm yuklanmadi", retry: true })}
+          alt="Скриншот страницы"
+          onerror={() => (st = { kind: "error", msg: "Изображение не загрузилось", retry: true })}
         />
       </a>
       <div class="shot-meta">
         <span>📸 {ago(st.takenAt)}</span>
-        <button class="linkbtn" onclick={() => load(pageUrl!, { force: true })} title="Sahifani qayta suratga olish">🔄 Yangilash</button>
+        <button class="linkbtn" onclick={() => load(pageUrl!, { force: true })} title="Снять страницу заново">🔄 Обновить</button>
       </div>
     {:else if st.kind === "offer"}
       <div class="shot-frame shot-msg">
         <span>{st.msg}</span>
-        <button class="ghost sm" onclick={() => load(pageUrl!, {})}>📸 Skrinshot olish</button>
+        <button class="ghost sm" onclick={() => load(pageUrl!, {})}>📸 Сделать скриншот</button>
       </div>
     {:else if st.kind === "error"}
       <div class="shot-frame shot-msg">
         <span>❌ {st.msg}</span>
-        {#if st.retry}<button class="ghost sm" onclick={() => load(pageUrl!, { force: true })}>↻ Qayta urinish</button>{/if}
+        {#if st.retry}<button class="ghost sm" onclick={() => load(pageUrl!, { force: true })}>↻ Повторить</button>{/if}
       </div>
     {/if}
   </div>
 {:else if linked && brokenLinked !== linked.path}
   <div class="shot-box" data-state="linked">
-    <a class="shot-frame" href={screenshotURL(linked.path)} target="_blank" rel="noopener" title="To'liq o'lchamda ochish">
+    <a class="shot-frame" href={screenshotURL(linked.path)} target="_blank" rel="noopener" title="Открыть в полном размере">
       <!-- The file may have been deleted from the cache: hide instead of a broken image. -->
-      <img src={screenshotURL(linked.path)} alt="Sahifa skrinshoti" onerror={() => (brokenLinked = linked!.path)} />
+      <img src={screenshotURL(linked.path)} alt="Скриншот страницы" onerror={() => (brokenLinked = linked!.path)} />
     </a>
     <div class="shot-meta"><span class="shot-url">📸 {linked.url}</span></div>
   </div>

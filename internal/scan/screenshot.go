@@ -95,7 +95,7 @@ func (s ScreenshotSource) Run(ctx context.Context, c *core.Collector) error {
 		}(base)
 	}
 	wg.Wait()
-	c.Log(core.LogInfo, "screenshots: captured "+itoa(int(count.Load()))+"/"+itoa(len(bases))+" ("+b.kind+")")
+	c.Log(core.LogInfo, "скриншоты: снято "+itoa(int(count.Load()))+"/"+itoa(len(bases))+" ("+b.kind+")")
 	return nil
 }
 
@@ -112,9 +112,9 @@ const captureTimeout = 30 * time.Second
 
 var (
 	// ErrNoBrowser means neither Chromium nor Firefox is installed.
-	ErrNoBrowser = errors.New("skrinshot uchun tizimda Chromium yoki Firefox kerak")
+	ErrNoBrowser = errors.New("для скриншотов в системе нужен Chromium или Firefox")
 	// ErrCaptureFailed means the browser ran but produced no image.
-	ErrCaptureFailed = errors.New("brauzer sahifa rasmini ololmadi (sahifa ochilmadi yoki vaqt tugadi)")
+	ErrCaptureFailed = errors.New("браузер не смог снять страницу (она не открылась или истекло время)")
 
 	browserSlots = make(chan struct{}, maxBrowsers)
 	flightMu     sync.Mutex
@@ -145,7 +145,7 @@ func ScreenshotPath(url string) (string, error) {
 // finishes within captureTimeout and its image is reused next time.
 func Capture(ctx context.Context, url string) (string, error) {
 	if !isWebURL(url) {
-		return "", errors.New("faqat http(s) sahifalarning skrinshoti olinadi")
+		return "", errors.New("скриншот можно сделать только для http(s)-страниц")
 	}
 	b := findBrowser()
 	if b.path == "" {

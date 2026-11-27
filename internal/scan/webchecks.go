@@ -74,11 +74,11 @@ func (s WebChecksSource) checkCORS(ctx context.Context, c *core.Collector, base,
 	acao := resp.Header.Get("Access-Control-Allow-Origin")
 	acac := strings.EqualFold(resp.Header.Get("Access-Control-Allow-Credentials"), "true")
 	if acao == evil && acac {
-		c.Finding("high", "cors:"+base, "CORS noto'g'ri sozlangan (origin aks ettiriladi + credentials)",
-			"Server ixtiyoriy Origin'ni aks ettiradi va credentials'ga ruxsat beradi — cross-origin ma'lumot o'g'irlash mumkin.", baseID)
+		c.Finding("high", "cors:"+base, "CORS настроен неверно (Origin отражается + credentials)",
+			"Сервер отражает любой Origin и разрешает credentials — возможна кража данных через другой сайт.", baseID)
 	} else if acao == evil || acao == "*" && acac {
-		c.Finding("medium", "cors:"+base, "CORS siyosati bo'sh",
-			"Access-Control-Allow-Origin ixtiyoriy manbaga ruxsat beradi.", baseID)
+		c.Finding("medium", "cors:"+base, "Слабая политика CORS",
+			"Access-Control-Allow-Origin разрешает доступ любому источнику.", baseID)
 	}
 }
 
@@ -89,8 +89,8 @@ func (s WebChecksSource) checkGit(ctx context.Context, c *core.Collector, base, 
 		return
 	}
 	if strings.HasPrefix(strings.TrimSpace(string(body)), "ref:") {
-		c.Finding("high", "git-exposed:"+base, ".git repozitoriysi ochiq",
-			base+"/.git/ ochiq — manba kod va tarix yuklab olinishi mumkin (git-dumper).", baseID)
+		c.Finding("high", "git-exposed:"+base, "Открыт репозиторий .git",
+			base+"/.git/ открыт — можно скачать исходный код и историю (git-dumper).", baseID)
 	}
 }
 
@@ -103,8 +103,8 @@ func (s WebChecksSource) checkEnv(ctx context.Context, c *core.Collector, base, 
 	b := string(body)
 	if strings.Contains(b, "=") && (strings.Contains(b, "APP_") || strings.Contains(b, "DB_") ||
 		strings.Contains(b, "SECRET") || strings.Contains(b, "API_KEY") || strings.Contains(b, "PASSWORD")) {
-		c.Finding("critical", "env-exposed:"+base, ".env fayli ochiq",
-			base+"/.env ochiq — maxfiy kalitlar va parollar oshkor bo'lishi mumkin.", baseID)
+		c.Finding("critical", "env-exposed:"+base, "Открыт файл .env",
+			base+"/.env открыт — могут быть раскрыты секретные ключи и пароли.", baseID)
 	}
 }
 
@@ -116,8 +116,8 @@ func (s WebChecksSource) checkDirListing(ctx context.Context, c *core.Collector,
 	}
 	b := string(body)
 	if strings.Contains(b, "<title>Index of /") || strings.Contains(b, "Directory listing for") {
-		c.Finding("low", "dirlisting:"+base, "Katalog ro'yxati ochiq (directory listing)",
-			base+" fayllar ro'yxatini ko'rsatadi — autoindex o'chirilishi kerak.", baseID)
+		c.Finding("low", "dirlisting:"+base, "Открыт листинг каталога (directory listing)",
+			base+" показывает список файлов — autoindex нужно отключить.", baseID)
 	}
 }
 
@@ -135,7 +135,7 @@ func (s WebChecksSource) checkMethods(ctx context.Context, c *core.Collector, ba
 		}
 	}
 	if len(risky) > 0 {
-		c.Finding("low", "http-methods:"+base, "Xavfli HTTP metodlar yoqilgan",
-			base+" quyidagi metodlarga ruxsat beradi: "+strings.Join(risky, ", "), baseID)
+		c.Finding("low", "http-methods:"+base, "Включены опасные HTTP-методы",
+			base+" разрешает методы: "+strings.Join(risky, ", "), baseID)
 	}
 }

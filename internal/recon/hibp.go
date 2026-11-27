@@ -59,9 +59,9 @@ func (s HIBPSource) Run(ctx context.Context, c *core.Collector) error {
 		}
 		emailID := graph.NodeID(graph.NodeEmail, email)
 		c.Finding("medium", "hibp:"+email,
-			fmt.Sprintf("Email buzilgan bazalarda: %s (%d ta)", email, len(breaches)),
-			email+" quyidagi buzilishlarda uchraydi: "+strings.Join(names, ", "), emailID)
-		c.Log(core.LogWarn, fmt.Sprintf("hibp: %s found in %d breaches", email, len(breaches)))
+			fmt.Sprintf("Email найден в утечках: %s (%d)", email, len(breaches)),
+			email+" встречается в утечках: "+strings.Join(names, ", "), emailID)
+		c.Log(core.LogWarn, fmt.Sprintf("hibp: %s найден в %d утечках", email, len(breaches)))
 		c.Flush()
 		s.pause(ctx)
 	}

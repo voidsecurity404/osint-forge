@@ -78,7 +78,7 @@ func (s BruteforceSource) Run(ctx context.Context, c *core.Collector) error {
 		}
 	}
 	if len(wildcard) > 0 {
-		c.Log(core.LogWarn, fmt.Sprintf("wildcard DNS detected (%d IPs) — filtering brute-force noise", len(wildcard)))
+		c.Log(core.LogWarn, fmt.Sprintf("обнаружен wildcard DNS (%d IP) — шум перебора отфильтрован", len(wildcard)))
 	}
 
 	conc := s.Cfg.MaxConcurrent * 8
@@ -128,7 +128,7 @@ func (s BruteforceSource) Run(ctx context.Context, c *core.Collector) error {
 		}(w)
 	}
 	wg.Wait()
-	c.Log(core.LogInfo, fmt.Sprintf("brute-forced %d live subdomains from %d candidates", found, len(words)))
+	c.Log(core.LogInfo, fmt.Sprintf("перебором найдено живых поддоменов: %d из %d кандидатов", found, len(words)))
 	return nil
 }
 

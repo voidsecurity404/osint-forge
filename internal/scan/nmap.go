@@ -101,7 +101,7 @@ func nmapArgs(userArgs string, ips []string, ipv6 bool) []string {
 func (s NmapSource) Run(ctx context.Context, c *core.Collector) error {
 	v4, v6, skipped := scopedIPs(c)
 	if skipped > 0 {
-		c.Log(core.LogInfo, fmt.Sprintf("%d IP qamrovdan tashqarida (masalan MX/NS serverlari) — skanlanmaydi", skipped))
+		c.Log(core.LogInfo, fmt.Sprintf("%d IP вне области (например, серверы MX/NS) — не сканируются", skipped))
 	}
 	var errs []error
 	for _, fam := range []struct {
@@ -119,7 +119,7 @@ func (s NmapSource) Run(ctx context.Context, c *core.Collector) error {
 }
 
 func (s NmapSource) scan(ctx context.Context, c *core.Collector, args []string, hosts int) error {
-	c.Log(core.LogInfo, fmt.Sprintf("scanning %d host(s): nmap %s", hosts, strings.Join(args, " ")))
+	c.Log(core.LogInfo, fmt.Sprintf("сканирование хостов (%d): nmap %s", hosts, strings.Join(args, " ")))
 	out, err := exec.CommandContext(ctx, "nmap", args...).Output()
 	if err != nil {
 		if ctx.Err() != nil {

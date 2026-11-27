@@ -33,7 +33,7 @@ func (s OTXSource) Run(ctx context.Context, c *core.Collector) error {
 	if err := getJSON(ctx, s.Cfg, url, nil, &resp); err != nil {
 		// The keyless API rate-limits per IP: that is not a fault of the scan.
 		if strings.Contains(err.Error(), "HTTP 429") {
-			c.Log(core.LogWarn, "OTX so'rov limiti (HTTP 429) — bu safar passiv DNS olinmadi, keyinroq qayta urinib ko'ring")
+			c.Log(core.LogWarn, "лимит запросов OTX (HTTP 429) — пассивный DNS в этот раз не получен, попробуйте позже")
 			return nil
 		}
 		return fmt.Errorf("otx: %w", err)
@@ -60,7 +60,7 @@ func (s OTXSource) Run(ctx context.Context, c *core.Collector) error {
 		}
 		seen++
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("otx: %d passive-dns records", seen))
+	c.Log(core.LogInfo, fmt.Sprintf("otx: записей пассивного DNS: %d", seen))
 	c.Flush()
 	return nil
 }

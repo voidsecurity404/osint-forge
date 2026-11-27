@@ -25,8 +25,8 @@ import (
 var assets embed.FS
 
 func main() {
-	addr := flag.String("addr", "127.0.0.1:8081", "listen address (use 0.0.0.0:8081 to expose on the LAN — there is no login!)")
-	open := flag.Bool("open", false, "open the UI in the default browser on start")
+	addr := flag.String("addr", "127.0.0.1:8081", "адрес для прослушивания (0.0.0.0:8081 откроет доступ из сети — авторизации нет!)")
+	open := flag.Bool("open", false, "открыть интерфейс в браузере при запуске")
 	flag.Parse()
 
 	app := NewApp()
@@ -35,7 +35,7 @@ func main() {
 	app.monitor = NewMonitor(app)
 	if dir, err := config.Dir(); err == nil {
 		if err := app.monitor.Persist(filepath.Join(dir, "monitor.json")); err != nil {
-			log.Printf("monitoring kuzatuvlari yuklanmadi: %v", err)
+			log.Printf("не удалось загрузить наблюдения мониторинга: %v", err)
 		}
 	}
 	app.OnScanDone(app.monitor.onScanDone)
@@ -57,7 +57,7 @@ func main() {
 		log.Fatalf("listen %s: %v", *addr, err)
 	}
 	url := "http://" + displayAddr(*addr)
-	fmt.Printf("🚀 osint-forge web UI: %s\n", url)
+	fmt.Printf("🚀 Веб-интерфейс osint-forge: %s\n", url)
 	if *open {
 		openBrowser(url)
 	}
@@ -71,7 +71,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
-	fmt.Println("\n⏹  to'xtatilmoqda…")
+	fmt.Println("\n⏹  остановка…")
 	app.CancelScan()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -6,24 +6,25 @@
   import NotesEditor from "./NotesEditor.svelte";
   import NextStep from "./NextStep.svelte";
   import ShotPreview from "./ShotPreview.svelte";
+  import { typeName, severityName } from "../lib/i18n";
 
   // Human-readable explanation of each node type (shown in the panel).
   const TYPE_DESC: Record<string, string> = {
-    ip: "IP manzil — nishonning internetdagi manzili. Unga ulangan domenlar, portlar va ASN quyida ko'rinadi.",
-    domain: "Domen nomi — asosiy nishon. Subdomenlar, DNS yozuvlari va WHOIS ma'lumotlari shunga bog'langan.",
-    subdomain: "Subdomen / host nomi — DNS, crt.sh, reverse-IP yoki sertifikatdan topilgan.",
-    port: "Ochiq TCP port — nmap yoki fallback skaner tomonidan aniqlangan.",
-    service: "Portda ishlayotgan servis va versiyasi (nmap -sV). Bu versiya CVE qidirish uchun ishlatiladi.",
-    technology: "Aniqlangan veb-texnologiya (server, framework yoki CMS).",
-    certificate: "TLS/SSL sertifikati — egasi, chiqaruvchi va amal qilish muddati. SAN domenlari ichki hostlarni oshkor qilishi mumkin.",
-    asn: "Avtonom tizim (ASN) — IP'ni internetga yo'naltiruvchi tarmoq operatori. Bir ASN ostidagi IP'lar bir tashkilotniki.",
-    whois_org: "WHOIS/RDAP bo'yicha ro'yxatga oluvchi yoki egasi tashkilot.",
-    url: "Topilgan URL / endpoint. Status kodi, HTML va texnologiyalar bu bilan bog'langan.",
-    email: "Veb-sahifada topilgan email manzil — ijtimoiy injiniring yoki aloqa uchun.",
-    cve: "Ma'lum zaiflik (CVE). Quyida og'irligi, CVSS bali va tavsifi; qaysi servisga tegishli ekani 'Bog'lanishlar' da.",
-    finding: "Xavfsizlik topilmasi / noto'g'ri sozlama. Og'irligi va tavsifi quyida; qaysi nishonga tegishli ekani 'Bog'lanishlar' da.",
-    param: "URL parametri — arxiv va JS'dan yig'ilgan. Turi (SQLi, XSS, redirect…) qo'lda tekshirish uchun nomzod ekanini bildiradi.",
-    bucket: "Bulut xotira (S3 / GCS / Azure) — domen nomidan taxmin qilingan va mavjudligi tekshirilgan.",
+    ip: "IP-адрес — адрес цели в интернете. Связанные с ним домены, порты и ASN показаны ниже.",
+    domain: "Доменное имя — основная цель. К нему привязаны поддомены, DNS-записи и данные WHOIS.",
+    subdomain: "Поддомен / имя хоста — найден через DNS, crt.sh, reverse-IP или сертификат.",
+    port: "Открытый TCP-порт — обнаружен nmap или резервным сканером.",
+    service: "Сервис на порту и его версия (nmap -sV). По версии ищутся CVE.",
+    technology: "Обнаруженная веб-технология (сервер, фреймворк или CMS).",
+    certificate: "TLS/SSL-сертификат — владелец, издатель и срок действия. Домены в SAN могут раскрыть внутренние хосты.",
+    asn: "Автономная система (ASN) — сетевой оператор, маршрутизирующий IP в интернет. IP одной ASN обычно принадлежат одной организации.",
+    whois_org: "Регистратор или организация-владелец по данным WHOIS/RDAP.",
+    url: "Найденный URL / эндпоинт. С ним связаны код статуса, HTML и технологии.",
+    email: "Email-адрес, найденный на веб-странице, — для социальной инженерии или связи.",
+    cve: "Известная уязвимость (CVE). Ниже — серьёзность, оценка CVSS и описание; к какому сервису она относится — в разделе «Связи».",
+    finding: "Находка безопасности / ошибка конфигурации. Серьёзность и описание ниже; к какой цели она относится — в разделе «Связи».",
+    param: "Параметр URL — собран из архива и JS. Тип (SQLi, XSS, redirect…) означает, что параметр — кандидат для ручной проверки.",
+    bucket: "Облачное хранилище (S3 / GCS / Azure).",
   };
 
   // Pretty candidate badges for param nodes.
@@ -55,7 +56,7 @@
     try {
       pageView = await FetchPage(u);
     } catch (e: any) {
-      pageView = { url: u, status: 0, body: "Xatolik: " + String(e?.message ?? e), title: "", server: "" };
+      pageView = { url: u, status: 0, body: "Ошибка: " + String(e?.message ?? e), title: "", server: "" };
     } finally {
       pageLoading = false;
     }
@@ -81,8 +82,8 @@
 {#if node}
   <aside class="detail">
     <div class="detail-head">
-      <span class="type-chip" data-type={node.type}>{node.type}</span>
-      <button class="ghost sm" onclick={close} aria-label="Yopish">✕</button>
+      <span class="type-chip" data-type={node.type}>{typeName(node.type)}</span>
+      <button class="ghost sm" onclick={close} aria-label="Закрыть">✕</button>
     </div>
     <h2>{node.label}</h2>
     <div class="id">{node.id}</div>
@@ -101,19 +102,19 @@
       </div>
     {/if}
 
-    <p class="desc">{TYPE_DESC[node.type] ?? "Topilgan element."}</p>
+    <p class="desc">{TYPE_DESC[node.type] ?? "Найденный элемент."}</p>
 
     {#if node.type === "cve" && node.props?.summary}
       <div class="cve-box">
         <div class="cve-meta">
-          <span class="sev {String(node.props.severity).toLowerCase()}">{node.props.severity}</span>
+          <span class="sev {String(node.props.severity).toLowerCase()}">{severityName(node.props.severity)}</span>
           {#if node.props.score}<span class="score">CVSS {node.props.score}</span>{/if}
         </div>
         {#if node.props.known_exploited}
-          <div class="kev-warn">⚠️ Faol ekspluatatsiya qilinmoqda (CISA KEV)</div>
+          <div class="kev-warn">⚠️ Активно эксплуатируется (CISA KEV)</div>
         {/if}
         {#if node.props.epss != null}
-          <div class="score">EPSS: {(Number(node.props.epss) * 100).toFixed(1)}% (30 kun ichida ekspluatatsiya ehtimoli)</div>
+          <div class="score">EPSS: {(Number(node.props.epss) * 100).toFixed(1)}% (вероятность эксплуатации в ближайшие 30 дней)</div>
         {/if}
         <p class="cve-sum">{node.props.summary}</p>
       </div>
@@ -128,7 +129,7 @@
     {#if node.type === "finding"}
       <div class="cve-box">
         <div class="cve-meta">
-          <span class="sev {String(node.props?.severity).toLowerCase()}">{node.props?.severity}</span>
+          <span class="sev {String(node.props?.severity).toLowerCase()}">{severityName(node.props?.severity)}</span>
         </div>
         {#if node.props?.description}<p class="cve-sum">{node.props.description}</p>{/if}
       </div>
@@ -136,9 +137,9 @@
 
     {#if urlForNode(node)}
       <div class="node-actions">
-        <button class="primary sm" onclick={() => OpenURL(urlForNode(node)!)}>🌐 Brauzerda ochish</button>
+        <button class="primary sm" onclick={() => OpenURL(urlForNode(node)!)}>🌐 Открыть в браузере</button>
         {#if node.type === "url"}
-          <button class="ghost sm" onclick={() => viewHTML(node)}>📄 HTML ko'rish</button>
+          <button class="ghost sm" onclick={() => viewHTML(node)}>📄 Показать HTML</button>
         {/if}
       </div>
     {/if}
@@ -167,16 +168,16 @@
       </tbody>
     </table>
     {#if propEntries(node).length === 0}
-      <p class="muted">Qo'shimcha ma'lumot yo'q.</p>
+      <p class="muted">Дополнительных данных нет.</p>
     {/if}
 
     {#if connections.length > 0}
-      <h3 class="section">Bog'lanishlar ({connections.length})</h3>
+      <h3 class="section">Связи ({connections.length})</h3>
       <ul class="conns">
         {#each connections as c}
           <li>
             <span class="rel">{c.dir === "out" ? "→" : "←"} {c.rel}</span>
-            <span class="conn-chip" data-type={c.type}>{c.type}</span>
+            <span class="conn-chip" data-type={c.type}>{typeName(c.type)}</span>
             <button class="linkbtn conn-label" onclick={() => (app.selected = app.view?.focusNode(c.id) ?? app.selected)}>{c.label}</button>
           </li>
         {/each}
@@ -189,11 +190,11 @@
   <div class="modal-bg" role="presentation" onclick={() => (pageView = null)}>
     <div class="modal wide" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === "Escape" && (pageView = null)}>
       <div class="detail-head">
-        <h2>Sahifa manbasi</h2>
+        <h2>Исходный код страницы</h2>
         <button class="ghost sm" onclick={() => (pageView = null)}>✕</button>
       </div>
       <div class="statusline">
-        {#if pageLoading}Yuklanmoqda…{:else}
+        {#if pageLoading}Загрузка…{:else}
           HTTP <span class="code sc" style="--sc:{statusClassOf(Number(pageView.status) || null)?.color ?? '#64748b'}">{pageView.status}</span>
           {#if pageView.server}· {pageView.server}{/if}
         {/if}

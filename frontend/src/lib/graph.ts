@@ -48,12 +48,12 @@ export interface StatusClass {
   color: string;
 }
 export const STATUS_CLASSES: StatusClass[] = [
-  { key: "2xx", label: "2xx", hint: "OK — sahifa ochiladi", color: "#22c55e" },
-  { key: "3xx", label: "3xx", hint: "Redirect — boshqa manzilga yo'naltiradi", color: "#3b82f6" },
-  { key: "auth", label: "401/403", hint: "Ruxsat kerak / taqiqlangan — himoyalangan resurs", color: "#a855f7" },
-  { key: "4xx", label: "4xx", hint: "Client xatosi (404 va h.k.)", color: "#eab308" },
-  { key: "5xx", label: "5xx", hint: "Server xatosi — nosozlik belgisi", color: "#ef4444" },
-  { key: "other", label: "boshqa", hint: "1xx yoki nostandart kod", color: "#94a3b8" },
+  { key: "2xx", label: "2xx", hint: "OK — страница открывается", color: "#22c55e" },
+  { key: "3xx", label: "3xx", hint: "Редирект — перенаправляет на другой адрес", color: "#3b82f6" },
+  { key: "auth", label: "401/403", hint: "Нужна авторизация / запрещено — защищённый ресурс", color: "#a855f7" },
+  { key: "4xx", label: "4xx", hint: "Ошибка клиента (404 и т. п.)", color: "#eab308" },
+  { key: "5xx", label: "5xx", hint: "Ошибка сервера — признак неисправности", color: "#ef4444" },
+  { key: "other", label: "другое", hint: "1xx или нестандартный код", color: "#94a3b8" },
 ];
 const STATUS_BY_KEY = new Map(STATUS_CLASSES.map((c) => [c.key, c]));
 

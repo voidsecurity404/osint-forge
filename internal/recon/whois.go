@@ -95,7 +95,7 @@ func (s WhoisSource) query(ctx context.Context, c *core.Collector, url string, r
 		orgID := c.Node(graph.NodeWhois, org, org, map[string]any{"roles": e.Roles})
 		c.Edge(rootID, orgID, role)
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("rdap ok (%d entities)", len(r.Entities)))
+	c.Log(core.LogInfo, fmt.Sprintf("rdap: получено (объектов: %d)", len(r.Entities)))
 }
 
 // vcardName extracts the "fn" (full name / org) value from an RDAP jCard array.

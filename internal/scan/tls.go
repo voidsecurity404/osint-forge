@@ -92,11 +92,11 @@ func (s TLSSource) inspect(ctx context.Context, c *core.Collector, host, port st
 		days := int(time.Until(cert.NotAfter).Hours() / 24)
 		switch {
 		case days < 0:
-			c.Finding("high", "cert-expired:"+key, "TLS sertifikat muddati o'tgan: "+name,
-				fmt.Sprintf("Sertifikat %s da tugagan (%d kun oldin).", cert.NotAfter.Format("2006-01-02"), -days), hostID)
+			c.Finding("high", "cert-expired:"+key, "Срок действия TLS-сертификата истёк: "+name,
+				fmt.Sprintf("Сертификат истёк %s (%d дн. назад).", cert.NotAfter.Format("2006-01-02"), -days), hostID)
 		case days < 21:
-			c.Finding("medium", "cert-expiring:"+key, "TLS sertifikat tez tugaydi: "+name,
-				fmt.Sprintf("Sertifikat %d kundan so'ng (%s) tugaydi.", days, cert.NotAfter.Format("2006-01-02")), hostID)
+			c.Finding("medium", "cert-expiring:"+key, "TLS-сертификат скоро истечёт: "+name,
+				fmt.Sprintf("Сертификат истечёт через %d дн. (%s).", days, cert.NotAfter.Format("2006-01-02")), hostID)
 		}
 	}
 
@@ -106,8 +106,8 @@ func (s TLSSource) inspect(ctx context.Context, c *core.Collector, host, port st
 		name string
 	}{{tls.VersionTLS10, "TLS 1.0"}, {tls.VersionTLS11, "TLS 1.1"}} {
 		if s.supports(ctx, host, port, v.ver) {
-			c.Finding("medium", "weak-tls:"+key+":"+v.name, "Eskirgan "+v.name+" qo'llab-quvvatlanadi: "+name,
-				v.name+" eskirgan va zaif hisoblanadi; o'chirilishi kerak.", hostID)
+			c.Finding("medium", "weak-tls:"+key+":"+v.name, "Поддерживается устаревший "+v.name+": "+name,
+				v.name+" устарел и считается небезопасным; его нужно отключить.", hostID)
 		}
 	}
 }

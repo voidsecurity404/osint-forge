@@ -6,34 +6,34 @@
   // Alert filter presets — mirror PresetFilter in monitor_filter.go.
   const PRESETS: Record<string, { label: string; filter: AlertFilter }> = {
     important: {
-      label: "Muhim o'zgarishlar (tavsiya)",
+      label: "Важные изменения (рекомендуется)",
       filter: { preset: "important", types: ["domain", "subdomain", "ip", "port", "service", "certificate", "cve", "finding", "bucket"] },
     },
-    critical: { label: "Faqat xavfli (high/critical, yangi port)", filter: { preset: "critical", types: ["port", "cve", "finding", "bucket"], minSeverity: "high", ignoreRemoved: true } },
-    all: { label: "Hamma o'zgarishlar", filter: { preset: "all" } },
-    custom: { label: "O'zim tanlayman…", filter: { preset: "custom" } },
+    critical: { label: "Только опасное (high/critical, новые порты)", filter: { preset: "critical", types: ["port", "cve", "finding", "bucket"], minSeverity: "high", ignoreRemoved: true } },
+    all: { label: "Все изменения", filter: { preset: "all" } },
+    custom: { label: "Выбрать вручную…", filter: { preset: "custom" } },
   };
   // Node types the user can pick, grouped under readable names.
   const TYPES: { label: string; types: string[] }[] = [
-    { label: "Subdomenlar", types: ["domain", "subdomain"] },
-    { label: "IP manzillar", types: ["ip"] },
-    { label: "Ochiq portlar", types: ["port"] },
-    { label: "Servislar", types: ["service"] },
-    { label: "Topilmalar", types: ["finding"] },
+    { label: "Поддомены", types: ["domain", "subdomain"] },
+    { label: "IP-адреса", types: ["ip"] },
+    { label: "Открытые порты", types: ["port"] },
+    { label: "Сервисы", types: ["service"] },
+    { label: "Находки", types: ["finding"] },
     { label: "CVE", types: ["cve"] },
-    { label: "Sertifikatlar", types: ["certificate"] },
-    { label: "URL / endpointlar", types: ["url"] },
-    { label: "Parametrlar", types: ["param"] },
-    { label: "Texnologiyalar", types: ["technology"] },
-    { label: "Email'lar", types: ["email"] },
+    { label: "Сертификаты", types: ["certificate"] },
+    { label: "URL / эндпоинты", types: ["url"] },
+    { label: "Параметры", types: ["param"] },
+    { label: "Технологии", types: ["technology"] },
+    { label: "Email-адреса", types: ["email"] },
     { label: "ASN / WHOIS", types: ["asn", "whois_org"] },
   ];
   const SEVERITIES = [
-    ["", "har qanday"],
-    ["low", "low va yuqori"],
-    ["medium", "medium va yuqori"],
-    ["high", "high va yuqori"],
-    ["critical", "faqat critical"],
+    ["", "любая"],
+    ["low", "low и выше"],
+    ["medium", "medium и выше"],
+    ["high", "high и выше"],
+    ["critical", "только critical"],
   ];
 
   let watches = $state<Watch[]>([]);
@@ -42,7 +42,7 @@
   let consent = $state(false);
   let preset = $state("important");
   // custom filter state
-  let picked = $state<string[]>(["Subdomenlar", "IP manzillar", "Ochiq portlar", "Topilmalar", "CVE"]);
+  let picked = $state<string[]>(["Поддомены", "IP-адреса", "Открытые порты", "Находки", "CVE"]);
   let minSeverity = $state("");
   let ignoreRemoved = $state(false);
 
@@ -54,12 +54,12 @@
 
   /** One-line description of a watch's filter. */
   function describe(f?: AlertFilter): string {
-    if (!f || (!f.types?.length && !f.minSeverity && !f.ignoreRemoved)) return "hamma o'zgarishlar";
-    if (f.preset && f.preset !== "custom" && PRESETS[f.preset]) return PRESETS[f.preset].label.replace(" (tavsiya)", "").toLowerCase();
+    if (!f || (!f.types?.length && !f.minSeverity && !f.ignoreRemoved)) return "все изменения";
+    if (f.preset && f.preset !== "custom" && PRESETS[f.preset]) return PRESETS[f.preset].label.replace(" (рекомендуется)", "").toLowerCase();
     const names = TYPES.filter((g) => g.types.some((t) => f.types?.includes(t))).map((g) => g.label.toLowerCase());
-    let s = names.length ? names.join(", ") : "hamma turlar";
+    let s = names.length ? names.join(", ") : "все типы";
     if (f.minSeverity) s += ` · ${f.minSeverity}+`;
-    if (f.ignoreRemoved) s += " · faqat yangilar";
+    if (f.ignoreRemoved) s += " · только новые";
     return s;
   }
 
@@ -73,19 +73,19 @@
   async function add() {
     const t = (target || app.graphTarget || app.target).trim();
     if (!t) {
-      app.flash("Nishon kiriting");
+      app.flash("Введите цель");
       return;
     }
     const f = currentFilter();
     if (preset === "custom" && !f.types?.length) {
-      app.flash("Kamida bitta turni belgilang");
+      app.flash("Отметьте хотя бы один тип");
       return;
     }
     try {
       await MonitorAdd(t, interval, consent, f);
       target = "";
       load();
-      app.flash("✅ Kuzatuv saqlandi: " + t);
+      app.flash("✅ Наблюдение сохранено: " + t);
     } catch (e) {
       app.flash("❌ " + errMsg(e));
     }
@@ -116,7 +116,7 @@
   async function testNotify() {
     try {
       await NotifyTest();
-      app.flash("✅ Test xabari yuborildi");
+      app.flash("✅ Тестовое сообщение отправлено");
     } catch (e) {
       app.flash("❌ " + errMsg(e));
     }
@@ -130,23 +130,23 @@
 
 <aside class="drawer">
   <div class="drawer-head">
-    <h2>🔔 Monitoring</h2>
-    <button class="ghost sm" onclick={() => (app.drawer = null)} aria-label="Yopish">✕</button>
+    <h2>🔔 Мониторинг</h2>
+    <button class="ghost sm" onclick={() => (app.drawer = null)} aria-label="Закрыть">✕</button>
   </div>
-  <p class="muted sm">Nishonni belgilangan oraliqda avtomatik qayta skanlaydi; filtrga mos o'zgarish chiqsa, Telegram yoki webhook orqali xabar yuboradi.</p>
+  <p class="muted sm">Цель автоматически пересканируется с заданным интервалом; если появятся изменения, подходящие под фильтр, придёт уведомление в Telegram или на вебхук.</p>
 
   <div class="mon-add">
-    <input type="text" placeholder="Nishon (bo'sh = joriy)" bind:value={target} />
-    <label class="mon-int">Har
+    <input type="text" placeholder="Цель (пусто = текущая)" bind:value={target} />
+    <label class="mon-int">Каждые
       <select bind:value={interval}>
-        <option value={5}>5 daqiqa</option>
-        <option value={60}>1 soat</option>
-        <option value={360}>6 soat</option>
-        <option value={720}>12 soat</option>
-        <option value={1440}>1 kun</option>
+        <option value={5}>5 минут</option>
+        <option value={60}>1 час</option>
+        <option value={360}>6 часов</option>
+        <option value={720}>12 часов</option>
+        <option value={1440}>1 день</option>
       </select>
     </label>
-    <label class="mon-int">Xabar
+    <label class="mon-int">Уведомлять
       <select bind:value={preset} class="mon-preset">
         {#each Object.entries(PRESETS) as [k, p]}<option value={k}>{p.label}</option>{/each}
       </select>
@@ -158,23 +158,23 @@
             <label class="row sm"><input type="checkbox" bind:group={picked} value={g.label} /> {g.label}</label>
           {/each}
         </div>
-        <label class="mon-int">Topilma/CVE jiddiyligi
+        <label class="mon-int">Серьёзность находок/CVE
           <select bind:value={minSeverity}>
             {#each SEVERITIES as [v, l]}<option value={v}>{l}</option>{/each}
           </select>
         </label>
-        <label class="row sm"><input type="checkbox" bind:checked={ignoreRemoved} /> Faqat yangilar (yo'qolganlar haqida xabar bermaslik)</label>
+        <label class="row sm"><input type="checkbox" bind:checked={ignoreRemoved} /> Только новые (не сообщать об исчезнувших)</label>
       </div>
     {/if}
-    <label class="row sm"><input type="checkbox" bind:checked={consent} /> Aktiv skan (ruxsatim bor)</label>
+    <label class="row sm"><input type="checkbox" bind:checked={consent} /> Активное сканирование (есть разрешение)</label>
     <div class="mon-actions">
-      <button class="primary sm" onclick={add}>💾 Saqlash</button>
-      <button class="ghost sm" onclick={testNotify}>✈ Test xabar</button>
+      <button class="primary sm" onclick={add}>💾 Сохранить</button>
+      <button class="ghost sm" onclick={testNotify}>✈ Тестовое сообщение</button>
     </div>
   </div>
 
   {#if watches.length === 0}
-    <p class="muted center sm">Hali kuzatuvdagi nishon yo'q.</p>
+    <p class="muted center sm">Пока нет целей под наблюдением.</p>
   {/if}
   <ul class="mon-list">
     {#each watches as w (w.target)}
@@ -182,11 +182,11 @@
         <div class="mon-line">
           <span class="name">{w.target}</span>
           <span>
-            <button class="ghost sm" onclick={() => edit(w)} title="Tahrirlash">✏️</button>
-            <button class="ghost sm danger-text" onclick={() => remove(w.target)} title="O'chirish">🗑</button>
+            <button class="ghost sm" onclick={() => edit(w)} title="Изменить">✏️</button>
+            <button class="ghost sm danger-text" onclick={() => remove(w.target)} title="Удалить">🗑</button>
           </span>
         </div>
-        <div class="meta">Har {w.intervalMin} daq · keyingi {when(w.nextRun)}{w.consent ? " · aktiv" : ""}</div>
+        <div class="meta">Каждые {w.intervalMin} мин · следующее {when(w.nextRun)}{w.consent ? " · активное" : ""}</div>
         <div class="meta mon-filter-sum">🔎 {describe(w.filter)}</div>
         {#if w.lastChange}<div class="mon-change">🔁 {w.lastChange}</div>{/if}
       </li>

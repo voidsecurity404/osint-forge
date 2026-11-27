@@ -498,7 +498,7 @@ func (s WebPortsSource) Run(ctx context.Context, c *core.Collector) error {
 	wg.Wait()
 	c.Flush()
 	if count > 0 {
-		c.Log(core.LogInfo, fmt.Sprintf("probed %d web port endpoints", count/2))
+		c.Log(core.LogInfo, fmt.Sprintf("проверено веб-портов: %d", count/2))
 	}
 	return nil
 }

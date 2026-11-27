@@ -206,12 +206,12 @@ func newRouter(a *App, dist fs.FS) http.Handler {
 		a.mu.Unlock()
 		nc := notify.Config{TelegramToken: cfg.TelegramToken, TelegramChatID: cfg.TelegramChatID, WebhookURL: cfg.WebhookURL}
 		if !nc.Enabled() {
-			writeErr(w, http.StatusBadRequest, fmt.Errorf("telegram yoki webhook sozlanmagan"))
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("Telegram или webhook не настроены"))
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
-		if err := notify.Send(ctx, nc, "✅ osint-forge test xabari — bildirishnomalar ishlayapti."); err != nil {
+		if err := notify.Send(ctx, nc, "✅ Тестовое сообщение osint-forge — уведомления работают."); err != nil {
 			writeErr(w, http.StatusBadGateway, err)
 			return
 		}
@@ -246,12 +246,12 @@ func guard(next http.Handler) http.Handler {
 			if origin := r.Header.Get("Origin"); origin != "" {
 				u, err := url.Parse(origin)
 				if err != nil || u.Host != r.Host {
-					http.Error(w, "cross-origin request blocked", http.StatusForbidden)
+					http.Error(w, "кросс-доменный запрос заблокирован", http.StatusForbidden)
 					return
 				}
 			}
 			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-				http.Error(w, "cross-site request blocked", http.StatusForbidden)
+				http.Error(w, "межсайтовый запрос заблокирован", http.StatusForbidden)
 				return
 			}
 		}
@@ -265,7 +265,7 @@ func guard(next http.Handler) http.Handler {
 func (a *App) handleEvents(w http.ResponseWriter, r *http.Request) {
 	fl, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		http.Error(w, "потоковая передача не поддерживается", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -323,7 +323,7 @@ func (a *App) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	p := filepath.Clean(r.URL.Query().Get("path"))
 	rel, err := filepath.Rel(dir, p)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		http.Error(w, "доступ запрещён", http.StatusForbidden)
 		return
 	}
 	// The same path is overwritten by every new capture of that URL: always
@@ -423,7 +423,7 @@ func obsidianZip(export func(string) (int, error)) ([]byte, error) {
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		http.Error(w, "Content-Type должен быть application/json", http.StatusUnsupportedMediaType)
 		return false
 	}
 	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))

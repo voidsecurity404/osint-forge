@@ -18,17 +18,17 @@ export function showGraph(d: graph.Delta | null | undefined) {
 /** Visual diff of two stored scans (empty ids = latest vs the one before). */
 export async function compareScans(target: string, from = "", to = "") {
   if (app.running) {
-    app.flash("ℹ️ Scan davom etmoqda — tugagach solishtiring");
+    app.flash("ℹ️ Идёт сканирование — сравните после завершения");
     return;
   }
   if (!target.trim()) {
-    app.flash("ℹ️ Avval nishonni skanlang yoki tarixdan oching");
+    app.flash("ℹ️ Сначала просканируйте цель или откройте её из истории");
     return;
   }
   try {
     const c = await HistoryCompare(target, from, to);
     if (!c.from) {
-      app.flash("ℹ️ Oldingi scan topilmadi — taqqoslash uchun yana bir marta skanlang");
+      app.flash("ℹ️ Предыдущее сканирование не найдено — просканируйте ещё раз, чтобы сравнить");
       return;
     }
     showGraph(c.graph);
@@ -68,7 +68,7 @@ export async function openScan(target: string, id: string) {
     app.timings = [];
     showGraph(d);
     app.loadNotes(target);
-    app.flash("📂 Scan ochildi: " + target);
+    app.flash("📂 Сканирование открыто: " + target);
   } catch (e) {
     app.flash("❌ " + errMsg(e));
   }

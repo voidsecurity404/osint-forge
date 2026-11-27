@@ -43,7 +43,7 @@ func decodeCrtSh(r io.Reader) ([]crtshEntry, error) {
 		return nil, err
 	}
 	if d, ok := tok.(json.Delim); !ok || d != '[' {
-		return nil, fmt.Errorf("unexpected crt.sh response")
+		return nil, fmt.Errorf("неожиданный ответ crt.sh")
 	}
 	var out []crtshEntry
 	for dec.More() {
@@ -99,7 +99,7 @@ func (s CrtShSource) Run(ctx context.Context, c *core.Collector) error {
 		if err == nil || len(entries) > 0 || !retryable(err) {
 			break
 		}
-		c.Log(core.LogWarn, fmt.Sprintf("crt.sh vaqtincha javob bermadi (%v) — %v dan keyin qayta urinilmoqda", err, pause))
+		c.Log(core.LogWarn, fmt.Sprintf("crt.sh временно не ответил (%v) — повтор через %v", err, pause))
 		select {
 		case <-time.After(pause):
 		case <-ctx.Done():
@@ -111,7 +111,7 @@ func (s CrtShSource) Run(ctx context.Context, c *core.Collector) error {
 		if len(entries) == 0 {
 			return fmt.Errorf("crt.sh: %w", err)
 		}
-		c.Log(core.LogWarn, fmt.Sprintf("crt.sh javobi to'liq o'qilmadi (%v) — %d yozuv bilan davom etilmoqda", err, len(entries)))
+		c.Log(core.LogWarn, fmt.Sprintf("ответ crt.sh прочитан не полностью (%v) — продолжаем с %d записями", err, len(entries)))
 	}
 
 	seen := map[string]bool{}
@@ -134,7 +134,7 @@ func (s CrtShSource) Run(ctx context.Context, c *core.Collector) error {
 			found++
 		}
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("found %d subdomains", found))
+	c.Log(core.LogInfo, fmt.Sprintf("найдено поддоменов: %d", found))
 	c.Flush()
 	return nil
 }

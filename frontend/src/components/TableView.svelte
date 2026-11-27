@@ -2,6 +2,7 @@
   import { app } from "../lib/state.svelte";
   import { statusOf, statusClassOf } from "../lib/graph";
   import { TAGS } from "../lib/api";
+  import { typeName, severityName } from "../lib/i18n";
   import type { graph } from "../lib/models";
 
   let search = $state("");
@@ -42,23 +43,23 @@
 
 <div class="tableview">
   <div class="table-controls">
-    <input class="tsearch" type="search" placeholder="🔍 Qidirish (nom yoki id)…" bind:value={search} />
+    <input class="tsearch" type="search" placeholder="🔍 Поиск (имя или id)…" bind:value={search} />
     <select bind:value={typeFilter}>
       {#each types as t}
-        <option value={t}>{t === "all" ? "Barcha turlar" : t} ({t === "all" ? nodes.length : nodes.filter((n) => n.type === t).length})</option>
+        <option value={t}>{t === "all" ? "Все типы" : typeName(t)} ({t === "all" ? nodes.length : nodes.filter((n) => n.type === t).length})</option>
       {/each}
     </select>
-    <span class="muted">{rows.length} ta{#if rows.length > shown.length} · birinchi {shown.length} tasi ko'rsatilgan — qidiruv yoki tur bilan toraytiring{/if}</span>
+    <span class="muted">найдено: {rows.length}{#if rows.length > shown.length} · показаны первые {shown.length} — уточните поиск или тип{/if}</span>
   </div>
   <div class="table-scroll">
     <table class="grid">
       <thead>
-        <tr><th>Tur</th><th>Nom</th><th>Status</th><th>Teg</th><th>Qo'shimcha</th></tr>
+        <tr><th>Тип</th><th>Имя</th><th>Статус</th><th>Тег</th><th>Дополнительно</th></tr>
       </thead>
       <tbody>
         {#each shown as n (n.id)}
           <tr onclick={() => pick(n)}>
-            <td><span class="type-chip" data-type={n.type}>{n.type}</span></td>
+            <td><span class="type-chip" data-type={n.type}>{typeName(n.type)}</span></td>
             <td class="tname">{n.label}</td>
             <td>
               {#if statusOf(n) != null}
@@ -67,11 +68,11 @@
               {/if}
             </td>
             <td>{tagsOf(n.id).join(" ")}</td>
-            <td class="tmeta">{n.props?.candidate ?? n.props?.severity ?? n.props?.version ?? n.props?.service ?? ""}</td>
+            <td class="tmeta">{n.props?.candidate ?? (n.props?.severity ? severityName(n.props.severity) : null) ?? n.props?.version ?? n.props?.service ?? ""}</td>
           </tr>
         {/each}
       </tbody>
     </table>
-    {#if rows.length === 0}<p class="muted center">Hech narsa topilmadi.</p>{/if}
+    {#if rows.length === 0}<p class="muted center">Ничего не найдено.</p>{/if}
   </div>
 </div>

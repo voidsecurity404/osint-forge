@@ -19,10 +19,10 @@ import (
 
 // Allowed tags and their human labels (Uzbek), in display order.
 var Tags = []struct{ Key, Label string }{
-	{"vuln", "Zaif"},
-	{"checked", "Tekshirildi"},
-	{"interesting", "Qiziq"},
-	{"fp", "False positive"},
+	{"vuln", "Уязвимо"},
+	{"checked", "Проверено"},
+	{"interesting", "Интересно"},
+	{"fp", "Ложное срабатывание"},
 }
 
 func validTag(t string) bool {
@@ -95,10 +95,10 @@ func load(target string) (map[string]Note, error) {
 // Set stores (or, when empty, removes) the note of one node.
 func Set(target, nodeID string, n Note) (Note, error) {
 	if strings.TrimSpace(target) == "" || nodeID == "" {
-		return Note{}, errors.New("target and node are required")
+		return Note{}, errors.New("нужно указать цель и узел")
 	}
 	if len(n.Text) > 20000 {
-		return Note{}, errors.New("note too long")
+		return Note{}, errors.New("заметка слишком длинная")
 	}
 	seen := map[string]bool{}
 	var tags []string

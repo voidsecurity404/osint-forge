@@ -15,29 +15,29 @@ import (
 func Markdown(d graph.Delta, target string) string {
 	byType := groupByType(d)
 	var b strings.Builder
-	fmt.Fprintf(&b, "# osint-forge hisoboti — %s\n\n", target)
-	fmt.Fprintf(&b, "_%s · %d node, %d edge_\n\n", time.Now().Format("2006-01-02 15:04"), len(d.Nodes), len(d.Edges))
+	fmt.Fprintf(&b, "# Отчёт osint-forge — %s\n\n", target)
+	fmt.Fprintf(&b, "_%s · узлов: %d, связей: %d_\n\n", time.Now().Format("2006-01-02 15:04"), len(d.Nodes), len(d.Edges))
 
-	b.WriteString("## Xulosa\n\n| Tur | Soni |\n|---|---|\n")
+	b.WriteString("## Сводка\n\n| Тип | Количество |\n|---|---|\n")
 	for _, t := range []graph.NodeType{graph.NodeSubdomain, graph.NodeIP, graph.NodePort, graph.NodeService, graph.NodeCVE, graph.NodeFinding, graph.NodeURL} {
-		fmt.Fprintf(&b, "| %s | %d |\n", t, len(byType[t]))
+		fmt.Fprintf(&b, "| %s | %d |\n", typeNameRU(t), len(byType[t]))
 	}
 	b.WriteString("\n")
 
 	if f := byType[graph.NodeFinding]; len(f) > 0 {
 		sortBySeverity(f, func(n *graph.Node) string { s, _ := n.Props["severity"].(string); return s })
-		b.WriteString("## Topilmalar\n\n| Og'irlik | Nomi | Tavsif |\n|---|---|---|\n")
+		b.WriteString("## Находки\n\n| Серьёзность | Название | Описание |\n|---|---|---|\n")
 		for _, n := range f {
 			sev, _ := n.Props["severity"].(string)
 			desc, _ := n.Props["description"].(string)
-			fmt.Fprintf(&b, "| %s | %s | %s |\n", strings.ToUpper(sev), mdCell(n.Label), mdCell(desc))
+			fmt.Fprintf(&b, "| %s | %s | %s |\n", sevNameRU(sev), mdCell(n.Label), mdCell(desc))
 		}
 		b.WriteString("\n")
 	}
 
 	if cves := byType[graph.NodeCVE]; len(cves) > 0 {
 		sortBySeverity(cves, func(n *graph.Node) string { s, _ := n.Props["severity"].(string); return s })
-		b.WriteString("## CVE zaifliklari\n\n| CVE | Og'irlik | CVSS | EPSS | KEV |\n|---|---|---|---|---|\n")
+		b.WriteString("## Уязвимости CVE\n\n| CVE | Серьёзность | CVSS | EPSS | KEV |\n|---|---|---|---|---|\n")
 		for _, n := range cves {
 			sev, _ := n.Props["severity"].(string)
 			score := scoreString(n.Props)
@@ -49,13 +49,13 @@ func Markdown(d graph.Delta, target string) string {
 			if ke, _ := n.Props["known_exploited"].(bool); ke {
 				kev = "⚠️"
 			}
-			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", n.Label, strings.ToUpper(sev), score, epss, kev)
+			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", n.Label, sevNameRU(sev), score, epss, kev)
 		}
 		b.WriteString("\n")
 	}
 
 	if noted := notedNodes(d); len(noted) > 0 {
-		b.WriteString("## Pentester eslatmalari\n\n| Element | Teglar | Eslatma |\n|---|---|---|\n")
+		b.WriteString("## Заметки пентестера\n\n| Элемент | Теги | Заметка |\n|---|---|---|\n")
 		for _, n := range noted {
 			tags, _ := n.Props["pentester_tags"].(string)
 			note, _ := n.Props["pentester_note"].(string)
@@ -64,8 +64,8 @@ func Markdown(d graph.Delta, target string) string {
 		b.WriteString("\n")
 	}
 
-	writeMDList(&b, "Subdomenlar", byType[graph.NodeSubdomain])
-	writeMDList(&b, "IP manzillar", byType[graph.NodeIP])
+	writeMDList(&b, "Поддомены", byType[graph.NodeSubdomain])
+	writeMDList(&b, "IP-адреса", byType[graph.NodeIP])
 	return b.String()
 }
 

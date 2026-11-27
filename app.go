@@ -152,13 +152,13 @@ func labelOf(t core.Target) string {
 func (a *App) startScan(req ScanRequest) error {
 	t := core.ParseTarget(req.Target)
 	if !t.Valid {
-		return errors.New("noto'g'ri nishon: to'g'ri IP manzil yoki domen kiriting (masalan 1.1.1.1 yoki example.com)")
+		return errors.New("неверная цель: укажите корректный IP-адрес или домен (например, 1.1.1.1 или example.com)")
 	}
 
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
-		return errors.New("a scan is already running")
+		return errors.New("сканирование уже выполняется")
 	}
 	// Fresh graph per scan.
 	a.g = graph.New()

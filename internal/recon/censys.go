@@ -81,7 +81,7 @@ func (s CensysSource) Run(ctx context.Context, c *core.Collector) error {
 			}
 			addShodanPort(c, ipID, ip, svc.Port, proto, product, version, cpe)
 		}
-		c.Log(core.LogInfo, fmt.Sprintf("censys %s: %d services, %d names", ip, len(h.Result.Services), len(h.Result.DNS.Names)))
+		c.Log(core.LogInfo, fmt.Sprintf("censys %s: сервисов %d, имён %d", ip, len(h.Result.Services), len(h.Result.DNS.Names)))
 		c.Flush()
 	}
 	return nil

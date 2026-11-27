@@ -21,7 +21,7 @@ func sampleDelta() graph.Delta {
 
 func TestMarkdown(t *testing.T) {
 	md := Markdown(sampleDelta(), "example.com")
-	for _, want := range []string{"# osint-forge", "CVE-2021-1", ".env exposed", "a.example.com"} {
+	for _, want := range []string{"# Отчёт osint-forge", "CVE-2021-1", ".env exposed", "a.example.com"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown missing %q", want)
 		}

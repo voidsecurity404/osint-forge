@@ -21,7 +21,7 @@ func (a *App) OpenScan(target, id string) (graph.Delta, error) {
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
-		return graph.Delta{}, errors.New("skan ketmoqda — avval uni to'xtating")
+		return graph.Delta{}, errors.New("идёт сканирование — сначала остановите его")
 	}
 	a.g = graph.FromDelta(d)
 	a.target = target

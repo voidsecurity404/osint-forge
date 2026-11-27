@@ -12,8 +12,8 @@
 </script>
 
 {#if items.length > 0 && app.mode === "graph"}
-  <div class="status-legend" class:shifted={!!app.selected} title="HTTP status kodlari bo'yicha ranglar — bosib ajratib ko'ring">
-    <div class="legend-title">HTTP status</div>
+  <div class="status-legend" class:shifted={!!app.selected} title="Цвета по HTTP-статусам — нажмите, чтобы выделить">
+    <div class="legend-title">HTTP-статус</div>
     {#each items as c}
       <button
         class="legend-item"

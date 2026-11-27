@@ -86,7 +86,7 @@ func (s WaybackSource) Run(ctx context.Context, c *core.Collector) error {
 		c.Edge(domID, id, "archived")
 		count++
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("%d archived URLs", count))
+	c.Log(core.LogInfo, fmt.Sprintf("архивных URL: %d", count))
 	c.Flush()
 	return nil
 }

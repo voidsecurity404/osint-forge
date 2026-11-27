@@ -39,7 +39,7 @@ func (PortScanSource) Applicable(core.Target) bool { return !NmapAvailable() }
 func (s PortScanSource) Run(ctx context.Context, c *core.Collector) error {
 	v4, v6, skipped := scopedIPs(c)
 	if skipped > 0 {
-		c.Log(core.LogInfo, fmt.Sprintf("%d IP qamrovdan tashqarida (masalan MX/NS serverlari) — skanlanmaydi", skipped))
+		c.Log(core.LogInfo, fmt.Sprintf("%d IP вне области (например, серверы MX/NS) — не сканируются", skipped))
 	}
 	ips := append(v4, v6...)
 	if len(ips) == 0 {
@@ -79,7 +79,7 @@ func (s PortScanSource) Run(ctx context.Context, c *core.Collector) error {
 		}
 	}
 	wg.Wait()
-	c.Log(core.LogInfo, "fallback port scan complete")
+	c.Log(core.LogInfo, "резервное сканирование портов завершено")
 	return nil
 }
 

@@ -85,7 +85,7 @@ func (s ShodanSource) Run(ctx context.Context, c *core.Collector) error {
 			})
 			c.Edge(ipID, cveID, "has_cve")
 		}
-		c.Log(core.LogInfo, fmt.Sprintf("shodan %s: %d ports, %d hostnames, %d vulns", ip, len(h.Ports), len(h.Hostnames), len(h.Vulns)))
+		c.Log(core.LogInfo, fmt.Sprintf("shodan %s: портов %d, имён %d, уязвимостей %d", ip, len(h.Ports), len(h.Hostnames), len(h.Vulns)))
 		c.Flush()
 	}
 	return nil
