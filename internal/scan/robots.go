@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"net/http"
 	"regexp"
@@ -30,7 +31,11 @@ func (RobotsSource) Stage() core.Stage           { return core.StageEnrich }
 func (RobotsSource) Applicable(core.Target) bool { return true }
 
 func (s RobotsSource) Run(ctx context.Context, c *core.Collector) error {
+	ctx = withScope(ctx, c) // redirects never leave the scope
 	for _, base := range s.liveBases(c) {
+		if ctx.Err() != nil {
+			return nil
+		}
 		s.parseRobots(ctx, c, base)
 		s.parseSitemap(ctx, c, base)
 		c.Flush()
@@ -87,8 +92,13 @@ func (s RobotsSource) parseRobots(ctx context.Context, c *core.Collector, base s
 	if count > 0 {
 		c.Log(core.LogInfo, fmt.Sprintf("%s/robots.txt → %d paths", base, count))
 	}
-	// Follow any sitemaps the robots.txt points to.
+	// Follow any sitemaps the robots.txt points to — but only on in-scope hosts:
+	// a "Sitemap:" line may point at a CDN or a completely different company.
 	for _, sm := range sitemaps {
+		if !inScopeURL(c, sm) {
+			c.Log(core.LogInfo, "sitemap qamrovdan tashqarida, o'tkazib yuborildi: "+sm)
+			continue
+		}
 		s.importSitemap(ctx, c, base, sm)
 	}
 }
@@ -106,7 +116,11 @@ func (s RobotsSource) importSitemap(ctx context.Context, c *core.Collector, base
 	matches := locRe.FindAllSubmatch(body, robotsPathLimit)
 	count := 0
 	for _, m := range matches {
+		// <loc> is XML text: "&amp;" → "&" (otherwise "?q=x&amp;redirect=…"
+		// hides the redirect parameter as "amp;redirect"). CDATA is unwrapped.
 		loc := strings.TrimSpace(string(m[1]))
+		loc = strings.TrimSuffix(strings.TrimPrefix(loc, "<![CDATA["), "]]>")
+		loc = strings.TrimSpace(stdhtml.UnescapeString(loc))
 		if loc == "" || !strings.HasPrefix(loc, "http") {
 			continue
 		}

@@ -1,63 +1,71 @@
 #!/usr/bin/env bash
 #
-# osint-forge launcher. Works from any shell (fish, zsh, bash) since it runs
-# under bash itself.
+# osint-forge web launcher (Go web server on port 8081).
 #
-#   ./start.sh            run the prebuilt app (builds it first if missing)
-#   ./start.sh dev        run in dev mode with hot reload (needs Go + Wails)
-#   ./start.sh build      (re)build the production binary
+#   ./start.sh            build if needed, then run → http://localhost:8081
+#   ./start.sh build      (re)build frontend + server binary
+#   ./start.sh dev        Vite dev server (hot reload) proxied to the Go API
 #   ./start.sh help       show this help
+#
+# Extra args are passed to the binary, e.g.:
+#   ./start.sh run -addr 0.0.0.0:8081   (expose on the LAN — no login, be careful)
+#   ./start.sh run -open                (open the browser automatically)
 #
 set -euo pipefail
 
-# Project directory = where this script lives (robust if you move the project).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN="$SCRIPT_DIR/build/bin/osint-forge"
-TAGS="webkit2_41"   # required on Arch/Omarchy: only webkit2gtk-4.1 exists
-
 cd "$SCRIPT_DIR"
 
-# Put the Go toolchain and the Wails CLI on PATH (via mise). Only needed for
-# dev/build, not for simply running the prebuilt binary.
-setup_toolchain() {
-  if command -v mise >/dev/null 2>&1; then
-    eval "$(mise activate bash)" 2>/dev/null || true
-  fi
-  if command -v go >/dev/null 2>&1; then
-    export PATH="$(go env GOBIN):$PATH"
-  fi
-  if ! command -v wails >/dev/null 2>&1; then
-    echo "❌ 'wails' topilmadi. O'rnatish: go install github.com/wailsapp/wails/v2/cmd/wails@latest" >&2
-    exit 1
-  fi
+need() {
+  command -v "$1" >/dev/null 2>&1 || { echo "❌ '$1' topilmadi — qurish uchun $2 kerak." >&2; exit 1; }
 }
 
-case "${1:-run}" in
-  dev)
-    setup_toolchain
-    echo "🚀 dev rejim (hot reload)…"
-    exec wails dev -tags "$TAGS"
-    ;;
-  build)
-    setup_toolchain
-    echo "🔨 build qilinmoqda…"
-    wails build -tags "$TAGS"
-    echo "✅ Tayyor: $BIN"
-    ;;
+build() {
+  need go "Go 1.26+ (https://go.dev)"
+  need npm "Node.js + npm (https://nodejs.org)"
+  echo "🔨 frontend build…"
+  (cd frontend && { [ -d node_modules ] || npm install --no-audit --no-fund; } && npm run build)
+  echo "🔨 Go server build…"
+  mkdir -p build/bin
+  go build -o "$BIN" .
+  echo "✅ Tayyor: $BIN"
+}
+
+# stale: true when there is no binary yet or any Go/UI source is newer than it
+# (otherwise `./start.sh` kept running an old build after the code changed).
+stale() {
+  [ -x "$BIN" ] || return 0
+  [ -n "$(find . \( -path ./frontend/node_modules -o -path ./build -o -path ./.git \) -prune -o \
+      \( -name '*.go' -o -name go.mod -o -name go.sum -o -name '*.json' -path './internal/*' \) \
+      -newer "$BIN" -print -quit)" ] && return 0
+  [ -n "$(find frontend/src frontend/index.html frontend/package.json frontend/vite.config.ts \
+      -newer "$BIN" -print -quit 2>/dev/null)" ] && return 0
+  return 1
+}
+
+cmd="${1:-run}"; shift || true
+case "$cmd" in
+  build) build ;;
   run|"")
-    if [ ! -x "$BIN" ]; then
-      echo "ℹ️  Binary topilmadi — build qilinmoqda…"
-      setup_toolchain
-      wails build -tags "$TAGS"
+    if stale; then
+      if command -v go >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+        build
+      elif [ -x "$BIN" ]; then
+        echo "⚠ manba kod binary'dan yangiroq, lekin go/npm yo'q — eski build ishga tushirilmoqda." >&2
+      else
+        build # fails with a clear message about the missing tool
+      fi
     fi
-    echo "🚀 Ishga tushmoqda: $BIN"
-    exec "$BIN"
+    exec "$BIN" "$@"
     ;;
-  help|-h|--help)
-    grep '^#' "$0" | sed 's/^# \{0,1\}//'
+  dev)
+    stale && build
+    "$BIN" "$@" &
+    trap 'kill $! 2>/dev/null' EXIT
+    cd frontend && npm run dev
     ;;
-  *)
-    echo "Noma'lum buyruq: $1  (ishlatish: ./start.sh [run|dev|build|help])" >&2
-    exit 1
-    ;;
+  # Only the header block (up to `set -euo`), without the shebang line.
+  help|-h|--help) sed -n '2,/^set -euo/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//' ;;
+  *) echo "Noma'lum buyruq: $cmd  (./start.sh [run|build|dev|help])" >&2; exit 1 ;;
 esac

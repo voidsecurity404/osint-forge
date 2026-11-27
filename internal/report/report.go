@@ -12,6 +12,12 @@ import (
 	"osint-forge/internal/graph"
 )
 
+// isWebURL reports whether u is an http(s) URL — the only kind a report links.
+func isWebURL(u string) bool {
+	l := strings.ToLower(strings.TrimSpace(u))
+	return strings.HasPrefix(l, "http://") || strings.HasPrefix(l, "https://")
+}
+
 // JSON returns the graph snapshot as indented JSON.
 func JSON(d graph.Delta) ([]byte, error) {
 	return json.MarshalIndent(d, "", "  ")
@@ -82,6 +88,18 @@ th{color:#64748b;font-weight:500;font-size:12px;text-transform:uppercase}
 	// CVEs.
 	writeCVETable(&b, byType[graph.NodeCVE])
 
+	// Pentester notes / tags (from the UI).
+	if noted := notedNodes(d); len(noted) > 0 {
+		b.WriteString(`<h2>Pentester eslatmalari</h2><table><tr><th>Element</th><th>Teglar</th><th>Eslatma</th></tr>`)
+		for _, n := range noted {
+			tags, _ := n.Props["pentester_tags"].(string)
+			note, _ := n.Props["pentester_note"].(string)
+			fmt.Fprintf(&b, `<tr><td><span class="muted">%s</span><br>%s</td><td>%s</td><td style="white-space:pre-wrap">%s</td></tr>`,
+				html.EscapeString(string(n.Type)), html.EscapeString(n.Label), html.EscapeString(tags), html.EscapeString(note))
+		}
+		b.WriteString(`</table>`)
+	}
+
 	// Hosts & subdomains.
 	writeListTable(&b, "Subdomenlar", byType[graph.NodeSubdomain])
 	writeListTable(&b, "IP manzillar", byType[graph.NodeIP])
@@ -105,11 +123,14 @@ th{color:#64748b;font-weight:500;font-size:12px;text-transform:uppercase}
 		for _, n := range urls {
 			u := strings.TrimPrefix(n.ID, "url:")
 			status := ""
-			if s, ok := n.Props["status"]; ok {
-				status = fmt.Sprint(s)
+			if s, ok := n.Props["status"]; ok && s != nil {
+				status = html.EscapeString(fmt.Sprint(s))
 			}
-			fmt.Fprintf(&b, `<tr><td><a href="%s">%s</a></td><td class="pill">%s</td></tr>`,
-				html.EscapeString(u), html.EscapeString(u), status)
+			cell := html.EscapeString(u)
+			if isWebURL(u) {
+				cell = fmt.Sprintf(`<a href="%s" rel="noopener noreferrer">%s</a>`, html.EscapeString(u), cell)
+			}
+			fmt.Fprintf(&b, `<tr><td>%s</td><td class="pill">%s</td></tr>`, cell, status)
 		}
 		b.WriteString(`</table>`)
 	}
@@ -152,10 +173,7 @@ func writeCVETable(b *strings.Builder, nodes []*graph.Node) {
 		if len(summary) > 160 {
 			summary = summary[:160] + "…"
 		}
-		score := ""
-		if s, ok := n.Props["score"]; ok {
-			score = fmt.Sprint(s)
-		}
+		score := html.EscapeString(scoreString(n.Props))
 		epss := ""
 		if e, ok := n.Props["epss"].(float64); ok {
 			epss = fmt.Sprintf("%.1f%%", e*100)
@@ -165,8 +183,12 @@ func writeCVETable(b *strings.Builder, nodes []*graph.Node) {
 			kev = "⚠️"
 		}
 		url, _ := n.Props["url"].(string)
-		fmt.Fprintf(b, `<tr><td><a href="%s" class="pill">%s</a></td><td><span class="sev" style="background:%s">%s</span></td><td class="pill">%s</td><td class="pill">%s</td><td>%s</td><td class="muted">%s</td></tr>`,
-			html.EscapeString(url), html.EscapeString(n.Label), sevColor(sev), html.EscapeString(strings.ToUpper(sev)),
+		idCell := html.EscapeString(n.Label)
+		if isWebURL(url) {
+			idCell = fmt.Sprintf(`<a href="%s" class="pill" rel="noopener noreferrer">%s</a>`, html.EscapeString(url), idCell)
+		}
+		fmt.Fprintf(b, `<tr><td>%s</td><td><span class="sev" style="background:%s">%s</span></td><td class="pill">%s</td><td class="pill">%s</td><td>%s</td><td class="muted">%s</td></tr>`,
+			idCell, sevColor(sev), html.EscapeString(strings.ToUpper(sev)),
 			score, epss, kev, html.EscapeString(summary))
 	}
 	b.WriteString(`</table>`)
@@ -182,4 +204,26 @@ func writeListTable(b *strings.Builder, title string, nodes []*graph.Node) {
 		fmt.Fprintf(b, `<tr><td class="pill">%s</td></tr>`, html.EscapeString(n.Label))
 	}
 	b.WriteString(`</table>`)
+}
+
+// notedNodes returns nodes the pentester tagged or annotated, vulnerable first.
+func notedNodes(d graph.Delta) []*graph.Node {
+	var out []*graph.Node
+	for _, n := range d.Nodes {
+		if _, ok := n.Props["pentester_tags"]; ok {
+			out = append(out, n)
+		} else if _, ok := n.Props["pentester_note"]; ok {
+			out = append(out, n)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ti, _ := out[i].Props["pentester_tags"].(string)
+		tj, _ := out[j].Props["pentester_tags"].(string)
+		vi, vj := strings.Contains(ti, "Zaif"), strings.Contains(tj, "Zaif")
+		if vi != vj {
+			return vi
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }

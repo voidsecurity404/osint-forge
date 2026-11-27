@@ -16,7 +16,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
+	"strings"
+	"syscall"
 	"time"
 
 	"osint-forge/internal/config"
@@ -59,16 +62,26 @@ func main() {
 	sarifOut := flag.String("sarif", "", "write a SARIF 2.1.0 report to this path")
 	htmlOut := flag.String("html", "", "write an HTML report to this path")
 	doDiff := flag.Bool("diff", false, "save this scan and print what changed since the previous run")
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "usage: reconcli [flags] <ip-or-domain>   (flags go BEFORE the target)")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 	if flag.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: reconcli [-active] [-quiet] <ip-or-domain>")
+		if flag.NArg() > 1 && strings.HasPrefix(flag.Arg(1), "-") {
+			fmt.Fprintf(os.Stderr, "reconcli: %q nishondan keyin kelgan — bayroqlar nishondan OLDIN yozilishi kerak\n", flag.Arg(1))
+		}
+		flag.Usage()
 		os.Exit(2)
 	}
 
-	cfg, _ := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config:", err, "(standart sozlamalar ishlatiladi)")
+	}
 	t := core.ParseTarget(flag.Arg(0))
-	if t.IP == "" && t.Domain == "" {
-		fmt.Fprintln(os.Stderr, "invalid target")
+	if !t.Valid {
+		fmt.Fprintf(os.Stderr, "noto'g'ri nishon %q: to'g'ri IP manzil yoki domen kiriting (masalan 1.1.1.1 yoki example.com)\n", flag.Arg(0))
 		os.Exit(2)
 	}
 
@@ -88,19 +101,23 @@ func main() {
 		recon.ShodanSource{Cfg: cfg},
 		recon.CensysSource{Cfg: cfg},
 		recon.GitHubSource{Cfg: cfg},
+		scan.ParamSource{Cfg: cfg},
 	}
 	if *active {
 		sources = append(sources,
 			scan.NmapSource{Cfg: cfg},
 			scan.PortScanSource{Cfg: cfg},
 			scan.HTTPSource{Cfg: cfg},
+			scan.WebPortsSource{Cfg: cfg},
 			scan.RobotsSource{Cfg: cfg},
 			scan.FuzzSource{Cfg: cfg},
 			scan.TLSSource{Cfg: cfg},
 			scan.WebChecksSource{Cfg: cfg},
 			scan.TakeoverSource{Cfg: cfg},
-			scan.NucleiSource{Cfg: cfg},
+			scan.BuiltinChecksSource{Cfg: cfg},
+			scan.NucleiSource{Cfg: cfg}, // optional: only if external nuclei is installed
 			scan.ScreenshotSource{Cfg: cfg},
+			scan.JSAnalyzeSource{Cfg: cfg},
 			recon.AXFRSource{Cfg: cfg},
 			recon.HIBPSource{Cfg: cfg},
 		)
@@ -117,7 +134,10 @@ func main() {
 	pipe := core.NewPipeline(em, g, sources...)
 	pipe.SetScope(core.NewScope(t, cfg.ScopeStrict && !*noScope, cfg.ExtraScope))
 
-	ctx := context.Background()
+	// Ctrl+C stops the scan gracefully: the partial result is still printed
+	// and the reports are still written.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	budget := *timeout
 	if budget == 0 && cfg.ScanTimeoutMin > 0 {
 		budget = time.Duration(cfg.ScanTimeoutMin) * time.Minute
@@ -128,6 +148,10 @@ func main() {
 		defer cancel()
 	}
 	pipe.Run(ctx, t)
+	complete := ctx.Err() == nil
+	if !complete {
+		fmt.Fprintln(os.Stderr, "⚠ skan to'liq tugamadi (to'xtatildi yoki vaqt byudjeti tugadi) — natija qisman")
+	}
 
 	// Final summary to stdout.
 	snap := g.Snapshot()
@@ -189,16 +213,21 @@ func main() {
 		writeReport(*htmlOut, []byte(report.HTML(snap, flag.Arg(0))), nil, "HTML")
 	}
 
-	// Monitoring: save this scan, then report what changed vs the previous one.
+	// Monitoring: report what changed vs the previous stored scan, then save
+	// this one (diff first: Save may replace an identical last scan).
 	if *doDiff {
 		label := t.Domain
 		if label == "" {
 			label = t.IP
 		}
-		if _, err := history.Save(label, snap); err != nil {
-			fmt.Fprintln(os.Stderr, "history save:", err)
+		diff, err := history.DiffAgainstPrevious(label, snap)
+		if !complete {
+			fmt.Fprintln(os.Stderr, "diff: qisman skan saqlanmadi va taqqoslanmadi")
+			os.Exit(1)
 		}
-		diff, err := history.DiffLastTwo(label)
+		if _, serr := history.Save(label, snap); serr != nil {
+			fmt.Fprintln(os.Stderr, "history save:", serr)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "diff:", err)
 		} else if !diff.HasPrevious {

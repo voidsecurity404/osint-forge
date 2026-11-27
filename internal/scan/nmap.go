@@ -5,7 +5,9 @@ package scan
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
+	"net"
 	"os/exec"
 	"strings"
 
@@ -54,22 +56,79 @@ type nmapRun struct {
 	} `xml:"host"`
 }
 
-func (s NmapSource) Run(ctx context.Context, c *core.Collector) error {
-	ips := c.ListByType(graph.NodeIP)
-	if len(ips) == 0 {
-		return nil
+// scopedIPs returns the discovered IPs an active scanner may touch, split by
+// address family, plus how many were skipped as out of scope (e.g. the MX/NS
+// servers of the domain, which belong to other organisations).
+func scopedIPs(c *core.Collector) (v4, v6 []string, skipped int) {
+	for _, ip := range c.ListByType(graph.NodeIP) {
+		if !c.InScope(ip) {
+			skipped++
+			continue
+		}
+		parsed := net.ParseIP(ip)
+		if parsed == nil {
+			continue
+		}
+		if parsed.To4() != nil {
+			v4 = append(v4, ip)
+		} else {
+			v6 = append(v6, ip)
+		}
 	}
+	return v4, v6, skipped
+}
 
-	args := strings.Fields(s.Cfg.NmapArgs)
+// nmapArgs builds the command line for one address family. nmap ignores IPv6
+// targets without -6 and cannot mix families in one run.
+func nmapArgs(userArgs string, ips []string, ipv6 bool) []string {
+	var args []string
+	for _, a := range strings.Fields(userArgs) {
+		if a == "-6" {
+			continue // added below only for the IPv6 run
+		}
+		args = append(args, a)
+	}
 	if len(args) == 0 {
 		args = []string{"-sV", "-T4", "--top-ports", "1000"}
 	}
+	if ipv6 {
+		args = append(args, "-6")
+	}
 	args = append(args, "-oX", "-")
-	args = append(args, ips...)
+	return append(args, ips...)
+}
 
-	c.Log(core.LogInfo, "scanning "+fmt.Sprint(len(ips))+" host(s): nmap "+strings.Join(args, " "))
+func (s NmapSource) Run(ctx context.Context, c *core.Collector) error {
+	v4, v6, skipped := scopedIPs(c)
+	if skipped > 0 {
+		c.Log(core.LogInfo, fmt.Sprintf("%d IP qamrovdan tashqarida (masalan MX/NS serverlari) — skanlanmaydi", skipped))
+	}
+	var errs []error
+	for _, fam := range []struct {
+		ips  []string
+		ipv6 bool
+	}{{v4, false}, {v6, true}} {
+		if len(fam.ips) == 0 || ctx.Err() != nil {
+			continue
+		}
+		if err := s.scan(ctx, c, nmapArgs(s.Cfg.NmapArgs, fam.ips, fam.ipv6), len(fam.ips)); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (s NmapSource) scan(ctx context.Context, c *core.Collector, args []string, hosts int) error {
+	c.Log(core.LogInfo, fmt.Sprintf("scanning %d host(s): nmap %s", hosts, strings.Join(args, " ")))
 	out, err := exec.CommandContext(ctx, "nmap", args...).Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil // cancelled / scan budget reached — not a tool failure
+		}
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+			return fmt.Errorf("nmap: %v: %s", err, strings.TrimSpace(string(ee.Stderr)))
+		}
 		return fmt.Errorf("nmap: %w", err)
 	}
 

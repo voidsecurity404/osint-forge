@@ -40,7 +40,7 @@ func Markdown(d graph.Delta, target string) string {
 		b.WriteString("## CVE zaifliklari\n\n| CVE | Og'irlik | CVSS | EPSS | KEV |\n|---|---|---|---|---|\n")
 		for _, n := range cves {
 			sev, _ := n.Props["severity"].(string)
-			score := fmt.Sprint(n.Props["score"])
+			score := scoreString(n.Props)
 			epss := ""
 			if e, ok := n.Props["epss"].(float64); ok {
 				epss = fmt.Sprintf("%.1f%%", e*100)
@@ -50,6 +50,16 @@ func Markdown(d graph.Delta, target string) string {
 				kev = "⚠️"
 			}
 			fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", n.Label, strings.ToUpper(sev), score, epss, kev)
+		}
+		b.WriteString("\n")
+	}
+
+	if noted := notedNodes(d); len(noted) > 0 {
+		b.WriteString("## Pentester eslatmalari\n\n| Element | Teglar | Eslatma |\n|---|---|---|\n")
+		for _, n := range noted {
+			tags, _ := n.Props["pentester_tags"].(string)
+			note, _ := n.Props["pentester_note"].(string)
+			fmt.Fprintf(&b, "| %s `%s` | %s | %s |\n", mdCell(n.Label), n.Type, mdCell(tags), mdCell(note))
 		}
 		b.WriteString("\n")
 	}
@@ -93,7 +103,7 @@ func CSV(d graph.Delta) ([]byte, error) {
 			if ke, _ := n.Props["known_exploited"].(bool); ke {
 				kev = "true"
 			}
-			_ = w.Write([]string{"cve", strings.ToLower(sev), n.Label, n.Label, fmt.Sprint(n.Props["score"]), epss, kev, summary})
+			_ = w.Write([]string{"cve", strings.ToLower(sev), n.Label, n.Label, scoreString(n.Props), epss, kev, summary})
 		}
 	}
 	w.Flush()
@@ -103,40 +113,121 @@ func CSV(d graph.Delta) ([]byte, error) {
 	return []byte(sb.String()), nil
 }
 
+// scoreString formats a CVSS score prop, or "" when there is none (Shodan
+// reports CVE ids without scores — fmt.Sprint(nil) printed "<nil>").
+func scoreString(props map[string]any) string {
+	v, ok := props["score"]
+	if !ok || v == nil {
+		return ""
+	}
+	if f, ok := v.(float64); ok && f == 0 {
+		return ""
+	}
+	return fmt.Sprint(v)
+}
+
+// findingKind is the stable kind of a finding id: "finding:spf-missing:x.com"
+// → "spf-missing"; template/nuclei/js-secret findings keep their sub-kind
+// ("check/adminer"), so each SARIF rule describes one kind of issue.
+func findingKind(id string) string {
+	parts := strings.SplitN(strings.TrimPrefix(id, "finding:"), ":", 3)
+	switch {
+	case len(parts) >= 2 && (parts[0] == "check" || parts[0] == "nuclei" || parts[0] == "js-secret"):
+		return parts[0] + "/" + parts[1]
+	case parts[0] != "":
+		return parts[0]
+	}
+	return "finding"
+}
+
+// affected returns, for every finding/CVE node, a location string for the
+// entity it is attached to: the URL for url nodes, the host for host nodes,
+// ip:port for services.
+func affected(d graph.Delta) map[string]string {
+	byID := make(map[string]*graph.Node, len(d.Nodes))
+	for _, n := range d.Nodes {
+		byID[n.ID] = n
+	}
+	out := map[string]string{}
+	for _, e := range d.Edges {
+		if _, done := out[e.Target]; done {
+			continue
+		}
+		src := byID[e.Source]
+		if src == nil {
+			continue
+		}
+		key := strings.SplitN(src.ID, ":", 2)
+		if len(key) != 2 {
+			continue
+		}
+		switch src.Type {
+		case graph.NodeURL, graph.NodeDomain, graph.NodeSubdomain, graph.NodeIP, graph.NodeService, graph.NodeEmail:
+			out[e.Target] = key[1]
+		}
+	}
+	return out
+}
+
 // SARIF renders findings and CVEs as a SARIF 2.1.0 log so results can be
-// ingested by CI/code-scanning dashboards.
+// ingested by CI/code-scanning dashboards (every result carries a location —
+// GitHub code scanning rejects results without one).
 func SARIF(d graph.Delta, target string) ([]byte, error) {
 	type sarifMsg struct {
 		Text string `json:"text"`
 	}
 	type sarifRule struct {
-		ID               string   `json:"id"`
-		Name             string   `json:"name"`
-		ShortDescription sarifMsg `json:"shortDescription"`
+		ID               string         `json:"id"`
+		Name             string         `json:"name"`
+		ShortDescription sarifMsg       `json:"shortDescription"`
+		Properties       map[string]any `json:"properties,omitempty"`
+	}
+	type sarifArtifact struct {
+		URI string `json:"uri"`
+	}
+	type sarifPhysical struct {
+		ArtifactLocation sarifArtifact `json:"artifactLocation"`
+	}
+	type sarifLocation struct {
+		PhysicalLocation sarifPhysical `json:"physicalLocation"`
 	}
 	type sarifResult struct {
-		RuleID  string   `json:"ruleId"`
-		Level   string   `json:"level"`
-		Message sarifMsg `json:"message"`
+		RuleID    string          `json:"ruleId"`
+		Level     string          `json:"level"`
+		Message   sarifMsg        `json:"message"`
+		Locations []sarifLocation `json:"locations"`
 	}
+	where := affected(d)
 	rules := map[string]sarifRule{}
 	var results []sarifResult
-	add := func(ruleID, name, level, text string) {
+	add := func(ruleID, name, level, text, nodeID string, props map[string]any) {
 		if _, ok := rules[ruleID]; !ok {
-			rules[ruleID] = sarifRule{ID: ruleID, Name: name, ShortDescription: sarifMsg{Text: name}}
+			rules[ruleID] = sarifRule{ID: ruleID, Name: ruleID, ShortDescription: sarifMsg{Text: name}, Properties: props}
 		}
-		results = append(results, sarifResult{RuleID: ruleID, Level: level, Message: sarifMsg{Text: text}})
+		loc := where[nodeID]
+		if loc == "" {
+			loc = target
+		}
+		if loc == "" {
+			loc = "unknown"
+		}
+		results = append(results, sarifResult{RuleID: ruleID, Level: level, Message: sarifMsg{Text: text},
+			Locations: []sarifLocation{{PhysicalLocation: sarifPhysical{ArtifactLocation: sarifArtifact{URI: loc}}}}})
 	}
 	for _, n := range d.Nodes {
 		switch n.Type {
 		case graph.NodeFinding:
 			sev, _ := n.Props["severity"].(string)
 			desc, _ := n.Props["description"].(string)
-			add("finding/"+severitySlug(sev), n.Label, sarifLevel(sev), n.Label+": "+desc)
+			add(findingKind(n.ID), n.Label, sarifLevel(sev), n.Label+": "+desc, n.ID, nil)
 		case graph.NodeCVE:
 			sev, _ := n.Props["severity"].(string)
 			summary, _ := n.Props["summary"].(string)
-			add(n.Label, n.Label, sarifLevel(sev), n.Label+": "+summary)
+			var props map[string]any
+			if s := scoreString(n.Props); s != "" {
+				props = map[string]any{"security-severity": s} // GitHub severity ranking
+			}
+			add(n.Label, n.Label, sarifLevel(sev), n.Label+": "+summary, n.ID, props)
 		}
 	}
 	ruleList := make([]sarifRule, 0, len(rules))
@@ -151,7 +242,7 @@ func SARIF(d graph.Delta, target string) ([]byte, error) {
 		"runs": []any{map[string]any{
 			"tool": map[string]any{"driver": map[string]any{
 				"name":           "osint-forge",
-				"informationUri": "https://github.com/osint-forge",
+				"informationUri": "https://github.com/voidsecurity404/osint-forge",
 				"rules":          ruleList,
 			}},
 			"results": results,
@@ -173,14 +264,6 @@ func sarifLevel(sev string) string {
 	default:
 		return "note"
 	}
-}
-
-func severitySlug(sev string) string {
-	sev = strings.ToLower(strings.TrimSpace(sev))
-	if sev == "" {
-		return "info"
-	}
-	return sev
 }
 
 func groupByType(d graph.Delta) map[graph.NodeType][]*graph.Node {

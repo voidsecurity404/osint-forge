@@ -36,6 +36,16 @@ var emailRe = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2
 // maxEmailsPerPage caps harvested emails per page.
 const maxEmailsPerPage = 15
 
+// scopeCtxKey carries the scan's scope check on request contexts, so the shared
+// http client can refuse to follow a redirect to an out-of-scope host.
+type scopeCtxKey struct{}
+
+// withScope attaches the collector's scope guard to ctx. Every active source
+// derives its request contexts from it.
+func withScope(ctx context.Context, c *core.Collector) context.Context {
+	return context.WithValue(ctx, scopeCtxKey{}, c.InScope)
+}
+
 // httpClient ignores TLS validation errors — recon targets often use self-signed
 // or mismatched certs and we still want to fingerprint them.
 var probeClient = &http.Client{
@@ -46,6 +56,12 @@ var probeClient = &http.Client{
 	},
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
+			return http.ErrUseLastResponse
+		}
+		// Stay inside the scope: an in-scope host redirecting to another
+		// organisation's server must not make us request that server. The 3xx
+		// itself is returned (and recorded with its Location).
+		if allow, ok := req.Context().Value(scopeCtxKey{}).(func(string) bool); ok && !allow(req.URL.Hostname()) {
 			return http.ErrUseLastResponse
 		}
 		return nil
@@ -83,6 +99,7 @@ func FetchPage(ctx context.Context, userAgent, rawurl string) (Page, error) {
 }
 
 func (s HTTPSource) Run(ctx context.Context, c *core.Collector) error {
+	ctx = withScope(ctx, c)
 	s.filter = ParseStatusFilter(s.Cfg.StatusCodes) // local copy; seen by probe goroutines
 	hosts := map[string]graph.NodeType{}
 	if c.Target.Domain != "" {
@@ -103,7 +120,7 @@ func (s HTTPSource) Run(ctx context.Context, c *core.Collector) error {
 	var wg sync.WaitGroup
 
 	for host, ht := range hosts {
-		if !c.InScope(host) {
+		if !c.InScope(host) || ctx.Err() != nil {
 			continue
 		}
 		for _, scheme := range []string{"https", "http"} {
@@ -112,7 +129,7 @@ func (s HTTPSource) Run(ctx context.Context, c *core.Collector) error {
 			go func(host string, ht graph.NodeType, scheme string) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				s.probe(ctx, c, host, ht, scheme)
+				s.probe(ctx, c, host, "", graph.NodeID(ht, host), scheme)
 			}(host, ht, scheme)
 		}
 	}
@@ -121,8 +138,13 @@ func (s HTTPSource) Run(ctx context.Context, c *core.Collector) error {
 	return nil
 }
 
-func (s HTTPSource) probe(ctx context.Context, c *core.Collector, host string, ht graph.NodeType, scheme string) {
+// probe GETs scheme://host[:port] and records the response as a URL node linked
+// to parentID (the host node, or the port node for non-standard ports).
+func (s HTTPSource) probe(ctx context.Context, c *core.Collector, host, port, parentID, scheme string) {
 	url := scheme + "://" + urlHost(host)
+	if port != "" {
+		url += ":" + port
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return
@@ -145,7 +167,7 @@ func (s HTTPSource) probe(ctx context.Context, c *core.Collector, host string, h
 		title = strings.TrimSpace(html(string(m[1])))
 	}
 
-	hostID := graph.NodeID(ht, host)
+	hostID := parentID
 	props := map[string]any{
 		"status": resp.StatusCode,
 		"title":  title,
@@ -157,10 +179,24 @@ func (s HTTPSource) probe(ctx context.Context, c *core.Collector, host string, h
 	if resp.TLS != nil {
 		props["https"] = true
 	}
+	if vendor, waf := detectCDN(resp.Header); vendor != "" || waf {
+		if vendor != "" {
+			props["cdn"] = vendor
+		}
+		if waf {
+			props["waf"] = true
+		}
+	}
 	// Record where redirects ultimately landed (useful for apex→www, http→https).
 	if resp.Request != nil && resp.Request.URL != nil {
 		if final := resp.Request.URL.String(); final != "" && final != url {
 			props["final_url"] = final
+		}
+	}
+	// A redirect that was not followed (out of scope / too many hops).
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		if loc, err := resp.Location(); err == nil {
+			props["location"] = loc.String()
 		}
 	}
 	if s.Cfg.FaviconHash {
@@ -389,4 +425,80 @@ func harvestEmails(body []byte) []string {
 func html(s string) string {
 	r := strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&#39;", "'")
 	return r.Replace(s)
+}
+
+// WebPortsSource probes HTTP(S) services the port scan found on non-standard
+// ports (8080, 8443, 3000, …). HTTPSource only tries scheme://host (80/443) and
+// runs concurrently with the port scan, so without this stage web apps on other
+// ports never got a URL node, a status code, fuzzing or web checks.
+type WebPortsSource struct{ Cfg config.Config }
+
+func (WebPortsSource) Name() string                { return "http-ports" }
+func (WebPortsSource) Stage() core.Stage           { return core.StageWeb }
+func (WebPortsSource) Applicable(core.Target) bool { return true }
+
+// webPortHints are ports treated as web even when the service name is unknown.
+var webPortHints = map[string]bool{
+	"81": true, "591": true, "3000": true, "4443": true, "5000": true, "7001": true,
+	"8000": true, "8008": true, "8080": true, "8081": true, "8443": true, "8888": true,
+	"9000": true, "9090": true, "9443": true,
+}
+
+func (s WebPortsSource) Run(ctx context.Context, c *core.Collector) error {
+	ctx = withScope(ctx, c)
+	h := HTTPSource{Cfg: s.Cfg}
+	h.filter = ParseStatusFilter(s.Cfg.StatusCodes)
+
+	conc := s.Cfg.MaxConcurrent
+	if conc <= 0 {
+		conc = 16
+	}
+	sem := make(chan struct{}, conc)
+	var wg sync.WaitGroup
+	count := 0
+	for _, key := range c.ListByType(graph.NodePort) {
+		// key: "<ip>:<port>/<proto>" (ip may be IPv6, so split on the LAST ':').
+		hp, proto, _ := strings.Cut(key, "/")
+		if proto != "tcp" {
+			continue
+		}
+		i := strings.LastIndex(hp, ":")
+		if i <= 0 {
+			continue
+		}
+		ip, port := hp[:i], hp[i+1:]
+		if port == "80" || port == "443" {
+			continue // already covered by HTTPSource
+		}
+		n, ok := c.GetNode(graph.NodePort, key)
+		if !ok {
+			continue
+		}
+		svc := strings.ToLower(fmt.Sprint(n.Props["service"]))
+		if !strings.Contains(svc, "http") && !webPortHints[port] {
+			continue
+		}
+		if !c.InScope(ip) {
+			continue
+		}
+		portID := graph.NodeID(graph.NodePort, key)
+		for _, scheme := range []string{"https", "http"} {
+			wg.Add(1)
+			count++
+			sem <- struct{}{}
+			go func(ip, port, scheme string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				if ctx.Err() == nil {
+					h.probe(ctx, c, ip, port, portID, scheme)
+				}
+			}(ip, port, scheme)
+		}
+	}
+	wg.Wait()
+	c.Flush()
+	if count > 0 {
+		c.Log(core.LogInfo, fmt.Sprintf("probed %d web port endpoints", count/2))
+	}
+	return nil
 }

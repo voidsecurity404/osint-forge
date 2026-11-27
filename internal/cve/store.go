@@ -39,7 +39,11 @@ func DefaultPath() (string, error) {
 
 // Open opens (and migrates) the CVE store at the given path.
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	// busy_timeout: the web server and a reconcli run may share this file; a
+	// second writer waits for the lock instead of failing with SQLITE_BUSY.
+	// WAL lets readers proceed while a write is in progress.
+	dsn := path + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}

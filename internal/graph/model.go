@@ -27,6 +27,8 @@ const (
 	NodeEmail     NodeType = "email"
 	NodeCVE       NodeType = "cve"
 	NodeFinding   NodeType = "finding" // a security issue / misconfiguration
+	NodeParam     NodeType = "param"   // a URL query parameter worth testing
+	NodeBucket    NodeType = "bucket"  // a cloud storage bucket (S3/GCS/Azure)
 )
 
 // Node is a single entity in the graph. ID must be stable and deterministic so
@@ -124,12 +126,65 @@ func (g *Graph) AddEdge(source, target, label string) (*Edge, bool) {
 	id := source + "->" + target
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	// Never store a dangling or self-referencing edge. An edge whose endpoint
+	// node does not exist used to reach the UI, where Cytoscape throws on it
+	// mid-batch — leaving already-added elements unstyled (the thick grey bar)
+	// and dropping the rest of the delta.
+	if source == "" || target == "" || source == target {
+		return nil, false
+	}
+	if _, ok := g.nodes[source]; !ok {
+		return nil, false
+	}
+	if _, ok := g.nodes[target]; !ok {
+		return nil, false
+	}
 	if e, ok := g.edges[id]; ok {
 		return e, false
 	}
 	e := &Edge{ID: id, Source: source, Target: target, Label: label}
 	g.edges[id] = e
 	return e, true
+}
+
+// hostTypes are interchangeable node types for "a host": a name discovered by
+// one source as a subdomain may be the root domain, and vice versa.
+var hostTypes = []NodeType{NodeDomain, NodeSubdomain, NodeIP}
+
+// Resolve returns id if that node exists. For host ids (domain:/subdomain:/ip:)
+// it falls back to the same key under the other host types, so callers that
+// guessed the wrong type (e.g. subdomain:example.com when example.com is the
+// root domain node) still link to the real node.
+func (g *Graph) Resolve(id string) (string, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, ok := g.nodes[id]; ok {
+		return id, true
+	}
+	for _, t := range hostTypes {
+		prefix := string(t) + ":"
+		if len(id) > len(prefix) && id[:len(prefix)] == prefix {
+			key := id[len(prefix):]
+			for _, alt := range hostTypes {
+				if cand := NodeID(alt, key); g.nodes[cand] != nil {
+					return cand, true
+				}
+			}
+			break
+		}
+	}
+	return id, false
+}
+
+// Copy returns a snapshot copy of a node (safe to serialize concurrently).
+func (g *Graph) Copy(id string) (*Node, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	n, ok := g.nodes[id]
+	if !ok {
+		return nil, false
+	}
+	return n.copy(), true
 }
 
 // Snapshot returns a stable, sorted copy of the whole graph.
@@ -141,6 +196,9 @@ func (g *Graph) Snapshot() Delta {
 		d.Nodes = append(d.Nodes, n.copy()) // copies: safe to serialize outside the lock
 	}
 	for _, e := range g.edges {
+		if g.nodes[e.Source] == nil || g.nodes[e.Target] == nil {
+			continue // defensive: never hand out a dangling edge
+		}
 		ec := *e
 		d.Edges = append(d.Edges, &ec)
 	}
@@ -156,14 +214,9 @@ func (g *Graph) Counts() (nodes, edges int) {
 	return len(g.nodes), len(g.edges)
 }
 
-// Get returns the node with the given id, if present. The returned pointer is
-// shared; callers must only read it.
-func (g *Graph) Get(id string) (*Node, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	n, ok := g.nodes[id]
-	return n, ok
-}
+// Get returns a snapshot copy of the node with the given id, if present. It
+// never hands out the live node: its Props map is mutated by concurrent merges.
+func (g *Graph) Get(id string) (*Node, bool) { return g.Copy(id) }
 
 // ListByType returns the natural keys (id without the type prefix) of all nodes
 // of the given type, sorted. Used by active scanners to enumerate discovered
@@ -180,4 +233,27 @@ func (g *Graph) ListByType(t NodeType) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// FromDelta builds a graph from a stored snapshot (used to reopen a past scan).
+func FromDelta(d Delta) *Graph {
+	g := New()
+	for _, n := range d.Nodes {
+		if n == nil || n.ID == "" {
+			continue
+		}
+		c := *n
+		if c.Props == nil {
+			c.Props = map[string]any{}
+		}
+		g.nodes[c.ID] = &c
+	}
+	for _, e := range d.Edges {
+		if e == nil || g.nodes[e.Source] == nil || g.nodes[e.Target] == nil || e.Source == e.Target {
+			continue
+		}
+		c := *e
+		g.edges[c.ID] = &c
+	}
+	return g
 }

@@ -26,6 +26,9 @@ func (s ReverseIPSource) Applicable(core.Target) bool {
 func (s ReverseIPSource) Run(ctx context.Context, c *core.Collector) error {
 	ips := c.ListByType(graph.NodeIP)
 	for _, ip := range ips {
+		if !c.InScope(ip) || ctx.Err() != nil {
+			continue // target infrastructure only (see ShodanSource)
+		}
 		if s.Cfg.SecurityTrailsKey != "" {
 			s.securityTrailsIP(ctx, c, ip)
 		}

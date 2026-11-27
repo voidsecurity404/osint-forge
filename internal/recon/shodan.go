@@ -36,6 +36,12 @@ type shodanHost struct {
 
 func (s ShodanSource) Run(ctx context.Context, c *core.Collector) error {
 	for _, ip := range c.ListByType(graph.NodeIP) {
+		// Only the target's own infrastructure: the MX/NS servers of a domain
+		// belong to other organisations and would just burn API quota and flood
+		// the graph with unrelated hosts.
+		if !c.InScope(ip) || ctx.Err() != nil {
+			continue
+		}
 		endpoint := "https://api.shodan.io/shodan/host/" + ip + "?key=" + url.QueryEscape(s.Cfg.ShodanKey)
 		var h shodanHost
 		if err := getJSON(ctx, s.Cfg, endpoint, nil, &h); err != nil {

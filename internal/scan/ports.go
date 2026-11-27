@@ -37,7 +37,11 @@ func (PortScanSource) Stage() core.Stage           { return core.StageProbe }
 func (PortScanSource) Applicable(core.Target) bool { return !NmapAvailable() }
 
 func (s PortScanSource) Run(ctx context.Context, c *core.Collector) error {
-	ips := c.ListByType(graph.NodeIP)
+	v4, v6, skipped := scopedIPs(c)
+	if skipped > 0 {
+		c.Log(core.LogInfo, fmt.Sprintf("%d IP qamrovdan tashqarida (masalan MX/NS serverlari) — skanlanmaydi", skipped))
+	}
+	ips := append(v4, v6...)
 	if len(ips) == 0 {
 		return nil
 	}
@@ -56,6 +60,9 @@ func (s PortScanSource) Run(ctx context.Context, c *core.Collector) error {
 			go func(ip, ipID string, port int) {
 				defer wg.Done()
 				defer func() { <-sem }()
+				if ctx.Err() != nil {
+					return
+				}
 				if conn := dial(ctx, ip, port); conn != nil {
 					product, version := "", ""
 					if bannerPorts[port] {

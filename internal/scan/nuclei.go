@@ -40,7 +40,12 @@ type nucleiResult struct {
 }
 
 func (s NucleiSource) Run(ctx context.Context, c *core.Collector) error {
-	bases := liveBaseURLs(c)
+	var bases []string
+	for _, b := range liveBaseURLs(c) {
+		if inScopeURL(c, b) {
+			bases = append(bases, b)
+		}
+	}
 	if len(bases) == 0 {
 		return nil
 	}
@@ -55,7 +60,12 @@ func (s NucleiSource) Run(ctx context.Context, c *core.Collector) error {
 	}
 	_ = tmp.Close()
 
-	args := []string{"-silent", "-jsonl", "-disable-update-check", "-l", tmp.Name()}
+	// Honour the configured politeness limit (nuclei's own default is 150 req/s).
+	rate := s.Cfg.RateLimitPerHost
+	if rate <= 0 {
+		rate = 40
+	}
+	args := []string{"-silent", "-jsonl", "-disable-update-check", "-rl", itoa(rate), "-l", tmp.Name()}
 	cmd := exec.CommandContext(ctx, "nuclei", args...)
 	var out bytes.Buffer
 	cmd.Stdout = &out

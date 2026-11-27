@@ -17,7 +17,9 @@ const (
 	StageDiscovery Stage = iota // passive: dns, whois, crt.sh, otx, brute-force (find names)
 	StageResolve                // resolve discovered names → IPs (must finish before probing)
 	StageProbe                  // active: port scan, http probe, reverse-ip, zone transfer
+	StageWeb                    // http probe of web services on non-standard ports found by the port scan
 	StageEnrich                 // derived: cve, tls, web checks, fuzz, takeover, report data
+	StagePost                   // runs on everything found: parameter mining, bucket checks
 )
 
 // Source is one unit of reconnaissance. Implementations live in internal/recon
@@ -67,6 +69,31 @@ type ProgressEmitter interface {
 	EmitProgress(Progress)
 }
 
+// SourceTiming reports one source's run: when it started, how long it took and
+// how much it added — shown in the UI's "Sources" panel.
+type SourceTiming struct {
+	Name       string `json:"name"`
+	Stage      string `json:"stage"`
+	Status     string `json:"status"`     // running | done | error | skipped
+	StartedAt  int64  `json:"startedAt"`  // unix ms
+	DurationMs int64  `json:"durationMs"` // 0 while running
+	Nodes      int    `json:"nodes"`      // new nodes it created
+	Edges      int    `json:"edges"`      // new edges it created
+	Error      string `json:"error,omitempty"`
+}
+
+// TimingEmitter is an optional capability: emitters that implement it receive
+// per-source timing updates.
+type TimingEmitter interface {
+	EmitTiming(SourceTiming)
+}
+
+func (p *Pipeline) emitTiming(t SourceTiming) {
+	if te, ok := p.em.(TimingEmitter); ok {
+		te.EmitTiming(t)
+	}
+}
+
 func (p *Pipeline) emitProgress(pr Progress) {
 	if pe, ok := p.em.(ProgressEmitter); ok {
 		pe.EmitProgress(pr)
@@ -88,10 +115,10 @@ func (p *Pipeline) Run(ctx context.Context, t Target) {
 	}
 	base.Flush()
 
-	stages := []Stage{StageDiscovery, StageResolve, StageProbe, StageEnrich}
+	stages := []Stage{StageDiscovery, StageResolve, StageProbe, StageWeb, StageEnrich, StagePost}
 	stageName := map[Stage]string{
 		StageDiscovery: "Discovery", StageResolve: "Resolve",
-		StageProbe: "Probe", StageEnrich: "Enrich",
+		StageProbe: "Probe", StageWeb: "Web", StageEnrich: "Enrich", StagePost: "Post",
 	}
 
 	// Pre-filter applicable sources once.
@@ -124,12 +151,26 @@ func (p *Pipeline) Run(ctx context.Context, t Target) {
 					return
 				}
 				c := base.forSource(s.Name())
+				timing := SourceTiming{Name: s.Name(), Stage: stageName[stage], Status: "running", StartedAt: time.Now().UnixMilli()}
+				p.emitTiming(timing)
+				var runErr error
+				finish := func(status string) {
+					timing.Status = status
+					timing.DurationMs = time.Now().UnixMilli() - timing.StartedAt
+					timing.Nodes, timing.Edges = c.added()
+					if runErr != nil {
+						timing.Error = runErr.Error()
+					}
+					p.emitTiming(timing)
+				}
 				// A panic in any single source must never crash the whole app:
 				// recover, log it, and let the rest of the scan continue.
 				defer func() {
 					if r := recover(); r != nil {
 						c.Log(LogError, fmt.Sprintf("panic recovered: %v", r))
 						c.Flush()
+						runErr = fmt.Errorf("panic: %v", r)
+						finish("error")
 					}
 				}()
 				nodes, edges := p.g.Counts()
@@ -140,8 +181,14 @@ func (p *Pipeline) Run(ctx context.Context, t Target) {
 				c.Log(LogInfo, "started")
 				if err := s.Run(ctx, c); err != nil {
 					c.Log(LogError, err.Error())
+					runErr = err
 				}
 				c.Flush()
+				if runErr != nil {
+					finish("error")
+				} else {
+					finish("done")
+				}
 			}(s)
 		}
 		wg.Wait()

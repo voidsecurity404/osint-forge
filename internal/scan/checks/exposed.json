@@ -1,0 +1,134 @@
+[
+  {
+    "id": "spring-actuator-env",
+    "name": "Spring Boot Actuator /env oshkor",
+    "severity": "high",
+    "path": "/actuator/env",
+    "desc": "Spring Boot /actuator/env endpoint'i ochiq — muhit o'zgaruvchilari, config va ba'zan sirlar oshkor bo'ladi.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["propertySources", "systemEnvironment", "activeProfiles"], "condition": "or", "part": "body"}
+    ]
+  },
+  {
+    "id": "spring-actuator",
+    "name": "Spring Boot Actuator oshkor",
+    "severity": "medium",
+    "path": "/actuator",
+    "desc": "Spring Boot Actuator endpoint'lari ochiq — health, metrics, env kabi ichki ma'lumotni berishi mumkin.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["_links", "self", "href"], "condition": "and", "part": "body"}
+    ]
+  },
+  {
+    "id": "apache-server-status",
+    "name": "Apache mod_status oshkor",
+    "severity": "medium",
+    "path": "/server-status",
+    "desc": "Apache /server-status sahifasi ochiq — faol so'rovlar, IP'lar va server ichki holati ko'rinadi.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["Apache Server Status", "Server uptime", "requests currently being processed"], "condition": "or", "part": "body"}
+    ]
+  },
+  {
+    "id": "phpinfo",
+    "name": "phpinfo() oshkor",
+    "severity": "medium",
+    "path": "/phpinfo.php",
+    "desc": "phpinfo() sahifasi PHP versiyasi, modullar, yo'llar va muhitni oshkor qiladi.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["PHP Version", "php.ini", "Configuration File"], "condition": "or", "part": "body"}
+    ]
+  },
+  {
+    "id": "swagger-api-docs",
+    "name": "API hujjati (Swagger/OpenAPI) oshkor",
+    "severity": "info",
+    "path": "/swagger.json",
+    "desc": "Swagger/OpenAPI ta'rifi ochiq — barcha API endpoint'lari va parametrlari ro'yxati.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["swagger", "openapi", "\"paths\""], "condition": "or", "part": "body"}
+    ]
+  },
+  {
+    "id": "graphql-endpoint",
+    "name": "GraphQL endpoint mavjud",
+    "severity": "info",
+    "path": "/graphql",
+    "desc": "GraphQL endpoint topildi — introspection yoqilgan bo'lsa, butun sxema oshkor bo'lishi mumkin (qo'lda tekshiring).",
+    "matchers": [
+      {"type": "status", "status": [200, 400, 405]},
+      {"type": "word", "words": ["graphql", "\"data\"", "\"errors\"", "must provide query"], "condition": "or", "part": "body"}
+    ]
+  },
+  {
+    "id": "go-pprof",
+    "name": "Go pprof debug endpoint oshkor",
+    "severity": "medium",
+    "path": "/debug/pprof/",
+    "desc": "Go pprof profiling endpoint'i ochiq — ichki holat va potentsial DoS yuzasi.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["Types of profiles available", "goroutine", "/debug/pprof/"], "condition": "or", "part": "body"}
+    ]
+  },
+  {
+    "id": "ds-store",
+    "name": ".DS_Store fayli oshkor",
+    "severity": "low",
+    "path": "/.DS_Store",
+    "desc": "macOS .DS_Store fayli papka ichidagi fayl nomlarini oshkor qiladi.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "regex", "regex": ["Bud1", "\\x00\\x00\\x00\\x01Bud1"], "part": "body"}
+    ]
+  },
+  {
+    "id": "wordpress-login",
+    "name": "WordPress aniqlandi (wp-login)",
+    "severity": "info",
+    "path": "/wp-login.php",
+    "desc": "WordPress login sahifasi topildi — versiya va plaginlarni tekshiring, parol hujumi himoyasini baholang.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["user_login", "wp-submit", "WordPress"], "condition": "or", "part": "body"}
+    ]
+  },
+  {
+    "id": "adminer",
+    "name": "Adminer DB panel oshkor",
+    "severity": "high",
+    "path": "/adminer.php",
+    "desc": "Adminer ma'lumotlar bazasi boshqaruv paneli ochiq — bu internetga ochiq bo'lmasligi kerak.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["Adminer", "login-form", "DB driver"], "condition": "or", "part": "body"}
+    ]
+  },
+  {
+    "id": "env-backup",
+    "name": "Config/backup fayli oshkor (.env.bak)",
+    "severity": "high",
+    "path": "/.env.bak",
+    "desc": "Zaxira .env fayli ochiq — sirlar va parollar oshkor bo'lishi mumkin.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "regex", "regex": ["(?i)(APP_KEY|DB_PASSWORD|SECRET|API_KEY)\\s*="], "part": "body"}
+    ]
+  },
+  {
+    "id": "sql-dump",
+    "name": "SQL dump fayli oshkor",
+    "severity": "high",
+    "path": "/dump.sql",
+    "desc": "Ochiq SQL dump — butun ma'lumotlar bazasi yuklab olinishi mumkin.",
+    "matchers": [
+      {"type": "status", "status": [200]},
+      {"type": "word", "words": ["INSERT INTO", "CREATE TABLE", "DROP TABLE"], "condition": "or", "part": "body"}
+    ]
+  }
+]

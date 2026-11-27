@@ -47,6 +47,7 @@ func (TakeoverSource) Stage() core.Stage           { return core.StageEnrich }
 func (TakeoverSource) Applicable(core.Target) bool { return true }
 
 func (s TakeoverSource) Run(ctx context.Context, c *core.Collector) error {
+	ctx = withScope(ctx, c) // redirects never leave the scope
 	conc := s.Cfg.MaxConcurrent
 	if conc <= 0 {
 		conc = 16
@@ -74,7 +75,7 @@ func (s TakeoverSource) Run(ctx context.Context, c *core.Collector) error {
 }
 
 func (s TakeoverSource) check(ctx context.Context, c *core.Collector, host string) {
-	cname, err := net.LookupCNAME(host)
+	cname, err := net.DefaultResolver.LookupCNAME(ctx, host) // honours cancel/budget
 	if err != nil {
 		return
 	}
@@ -84,7 +85,7 @@ func (s TakeoverSource) check(ctx context.Context, c *core.Collector, host strin
 			continue
 		}
 		if s.hasFingerprint(ctx, host, sig.fingerprint) {
-			hostID := graph.NodeID(graph.NodeSubdomain, host)
+			hostID := c.HostID(host) // real node id: domain, subdomain or ip
 			c.Finding("high", "takeover:"+host,
 				"Subdomain takeover ehtimoli: "+host+" ("+sig.service+")",
 				host+" → "+cname+" ("+sig.service+") da egasiz resurs topildi; subdomenni egallab olish mumkin.", hostID)

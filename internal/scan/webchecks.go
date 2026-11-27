@@ -23,7 +23,14 @@ func (WebChecksSource) Stage() core.Stage           { return core.StageEnrich }
 func (WebChecksSource) Applicable(core.Target) bool { return true }
 
 func (s WebChecksSource) Run(ctx context.Context, c *core.Collector) error {
+	ctx = withScope(ctx, c) // redirects never leave the scope
 	for _, base := range s.liveBases(c) {
+		if ctx.Err() != nil {
+			return nil
+		}
+		if !inScopeURL(c, base) {
+			continue
+		}
 		baseID := graph.NodeID(graph.NodeURL, base)
 		s.checkCORS(ctx, c, base, baseID)
 		s.checkGit(ctx, c, base, baseID)
@@ -129,6 +136,6 @@ func (s WebChecksSource) checkMethods(ctx context.Context, c *core.Collector, ba
 	}
 	if len(risky) > 0 {
 		c.Finding("low", "http-methods:"+base, "Xavfli HTTP metodlar yoqilgan",
-			base+" quyidagi metodlarга ruxsat beradi: "+strings.Join(risky, ", "), baseID)
+			base+" quyidagi metodlarga ruxsat beradi: "+strings.Join(risky, ", "), baseID)
 	}
 }
