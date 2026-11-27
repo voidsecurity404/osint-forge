@@ -48,7 +48,7 @@ func (s GitHubSource) Run(ctx context.Context, c *core.Collector) error {
 		return fmt.Errorf("github: %w", err)
 	}
 	if res.TotalCount == 0 || len(res.Items) == 0 {
-		c.Log(core.LogInfo, "github: no code matches")
+		c.Log(core.LogInfo, "github: совпадений в коде нет")
 		return nil
 	}
 
@@ -67,10 +67,10 @@ func (s GitHubSource) Run(ctx context.Context, c *core.Collector) error {
 		repoNames = append(repoNames, r)
 	}
 	c.Finding("medium", "github:"+domain,
-		fmt.Sprintf("GitHub'da domen eslatilgan: %d natija (%d repo)", res.TotalCount, len(repos)),
-		"Domen GitHub koddagi quyidagi repolarda uchraydi — sizib chiqqan konfiguratsiya/kalitlar uchun tekshiring: "+strings.Join(repoNames, ", "),
+		fmt.Sprintf("Домен упоминается на GitHub: %d результатов (%d репозиториев)", res.TotalCount, len(repos)),
+		"Домен встречается в коде следующих репозиториев GitHub — проверьте их на утёкшие конфигурации и ключи: "+strings.Join(repoNames, ", "),
 		domID)
-	c.Log(core.LogWarn, fmt.Sprintf("github: %d matches across %d repos", res.TotalCount, len(repos)))
+	c.Log(core.LogWarn, fmt.Sprintf("github: %d совпадений в %d репозиториях", res.TotalCount, len(repos)))
 	c.Flush()
 	return nil
 }

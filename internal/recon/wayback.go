@@ -23,6 +23,37 @@ func (WaybackSource) Name() string                  { return "wayback" }
 func (WaybackSource) Stage() core.Stage             { return core.StageEnrich }
 func (WaybackSource) Applicable(t core.Target) bool { return t.Domain != "" }
 
+// plausibleArchivedURL filters out the broken/payload URLs the archive often
+// holds (XSS payloads, truncated HTML fragments, control chars) so they don't
+// flood the graph. A usable URL parses cleanly and its decoded path+query has no
+// whitespace, quotes, angle brackets or other HTML/markup characters.
+func plausibleArchivedURL(u string) bool {
+	if u == "" || len(u) > 512 {
+		return false
+	}
+	p, err := url.Parse(u)
+	if err != nil || (p.Scheme != "http" && p.Scheme != "https") || p.Host == "" {
+		return false
+	}
+	// Decode %xx so payloads hidden behind encoding are caught too.
+	decoded := p.Path
+	if q, err := url.QueryUnescape(p.RawQuery); err == nil {
+		decoded += q
+	} else {
+		decoded += p.RawQuery
+	}
+	if dp, err := url.PathUnescape(p.Path); err == nil {
+		decoded = dp + decoded[len(p.Path):]
+	}
+	const bad = " \"'<>{}|\\^`"
+	for _, r := range decoded {
+		if r < 0x20 || strings.ContainsRune(bad, r) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s WaybackSource) Run(ctx context.Context, c *core.Collector) error {
 	domain := c.Target.Domain
 	q := url.Values{
@@ -32,7 +63,8 @@ func (s WaybackSource) Run(ctx context.Context, c *core.Collector) error {
 		"collapse": {"urlkey"},
 		"limit":    {fmt.Sprint(waybackLimit)},
 	}
-	endpoint := "http://web.archive.org/cdx/search/cdx?" + q.Encode()
+	// HTTPS: the cleartext endpoint leaked the target domain on the wire.
+	endpoint := "https://web.archive.org/cdx/search/cdx?" + q.Encode()
 
 	// CDX returns a JSON array of arrays; the first row is the header.
 	var rows [][]string
@@ -47,14 +79,14 @@ func (s WaybackSource) Run(ctx context.Context, c *core.Collector) error {
 			continue
 		}
 		u := strings.TrimSpace(row[0])
-		if u == "" {
+		if !plausibleArchivedURL(u) {
 			continue
 		}
 		id := c.Node(graph.NodeURL, u, u, map[string]any{"source": "wayback", "archived": true})
 		c.Edge(domID, id, "archived")
 		count++
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("%d archived URLs", count))
+	c.Log(core.LogInfo, fmt.Sprintf("архивных URL: %d", count))
 	c.Flush()
 	return nil
 }

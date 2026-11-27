@@ -26,6 +26,9 @@ func (s ReverseIPSource) Applicable(core.Target) bool {
 func (s ReverseIPSource) Run(ctx context.Context, c *core.Collector) error {
 	ips := c.ListByType(graph.NodeIP)
 	for _, ip := range ips {
+		if !c.InScope(ip) || ctx.Err() != nil {
+			continue // target infrastructure only (see ShodanSource)
+		}
 		if s.Cfg.SecurityTrailsKey != "" {
 			s.securityTrailsIP(ctx, c, ip)
 		}
@@ -74,7 +77,7 @@ func (s ReverseIPSource) securityTrailsIP(ctx context.Context, c *core.Collector
 	for _, r := range resp.Records {
 		s.addHostOnIP(c, ip, r.Hostname, "securitytrails")
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("securitytrails %s: %d domains", ip, len(resp.Records)))
+	c.Log(core.LogInfo, fmt.Sprintf("securitytrails %s: доменов %d", ip, len(resp.Records)))
 }
 
 func (s ReverseIPSource) securityTrailsSubdomains(ctx context.Context, c *core.Collector, domain string) {
@@ -84,7 +87,7 @@ func (s ReverseIPSource) securityTrailsSubdomains(ctx context.Context, c *core.C
 	}
 	headers := map[string]string{"APIKEY": s.Cfg.SecurityTrailsKey}
 	if err := getJSON(ctx, s.Cfg, url, headers, &resp); err != nil {
-		c.Log(core.LogWarn, "securitytrails subdomains: "+err.Error())
+		c.Log(core.LogWarn, "securitytrails, поддомены: "+err.Error())
 		return
 	}
 	domID := graph.NodeID(graph.NodeDomain, domain)
@@ -93,7 +96,7 @@ func (s ReverseIPSource) securityTrailsSubdomains(ctx context.Context, c *core.C
 		id := c.Node(graph.NodeSubdomain, full, full, map[string]any{"via": "securitytrails"})
 		c.Edge(domID, id, "subdomain")
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("securitytrails: %d subdomains", len(resp.Subdomains)))
+	c.Log(core.LogInfo, fmt.Sprintf("securitytrails: поддоменов %d", len(resp.Subdomains)))
 }
 
 // --- VirusTotal ---
@@ -115,5 +118,5 @@ func (s ReverseIPSource) virusTotalIP(ctx context.Context, c *core.Collector, ip
 	for _, d := range resp.Data {
 		s.addHostOnIP(c, ip, d.Attributes.HostName, "virustotal")
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("virustotal %s: %d resolutions", ip, len(resp.Data)))
+	c.Log(core.LogInfo, fmt.Sprintf("virustotal %s: разрешений %d", ip, len(resp.Data)))
 }

@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/miekg/dns"
 
@@ -25,39 +26,63 @@ func (ASNSource) Stage() core.Stage           { return core.StageEnrich }
 func (ASNSource) Applicable(core.Target) bool { return true }
 
 func (s ASNSource) Run(ctx context.Context, c *core.Collector) error {
-	nameCache := map[string]string{}
-	for _, ip := range c.ListByType(graph.NodeIP) {
-		asn, prefix, country, ok := cymruOrigin(ctx, ip)
-		if !ok {
-			continue
+	// Lookups run in parallel: one by one, every unanswered DNS query cost a
+	// 2 s timeout per resolver — 16 IPs took ~35 s on a real target.
+	var (
+		mu        sync.Mutex
+		nameCache = map[string]string{}
+		wg        sync.WaitGroup
+		sem       = make(chan struct{}, asnWorkers)
+	)
+	asName := func(asn string) string {
+		mu.Lock()
+		name, ok := nameCache[asn]
+		mu.Unlock()
+		if ok {
+			return name
 		}
-		name := nameCache[asn]
-		if name == "" {
-			name = cymruASName(ctx, asn)
-			nameCache[asn] = name
-		}
-		label := "AS" + asn
-		if name != "" {
-			label = "AS" + asn + " " + name
-		}
-		ipProps := map[string]any{}
-		if country != "" {
-			ipProps["country"] = country
-		}
-		if len(ipProps) > 0 {
-			c.Node(graph.NodeIP, ip, ip, ipProps)
-		}
-		asProps := map[string]any{"name": name}
-		if prefix != "" {
-			asProps["prefix"] = prefix // routed CIDR — enables netblock pivoting
-		}
-		asID := c.Node(graph.NodeASN, "AS"+asn, label, asProps)
-		ipID := c.Node(graph.NodeIP, ip, ip, nil)
-		c.Edge(ipID, asID, "belongs_to_asn")
-		c.Flush()
+		name = cymruASName(ctx, asn)
+		mu.Lock()
+		nameCache[asn] = name
+		mu.Unlock()
+		return name
 	}
+	for _, ip := range c.ListByType(graph.NodeIP) {
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(ip string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			asn, prefix, country, ok := cymruOrigin(ctx, ip)
+			if !ok {
+				return
+			}
+			name := asName(asn)
+			label := "AS" + asn
+			if name != "" {
+				label = "AS" + asn + " " + name
+			}
+			if country != "" {
+				c.Node(graph.NodeIP, ip, ip, map[string]any{"country": country})
+			}
+			asProps := map[string]any{"name": name}
+			if prefix != "" {
+				asProps["prefix"] = prefix // routed CIDR — enables netblock pivoting
+			}
+			asID := c.Node(graph.NodeASN, "AS"+asn, label, asProps)
+			c.Edge(graph.NodeID(graph.NodeIP, ip), asID, "belongs_to_asn")
+			c.Flush()
+		}(ip)
+	}
+	wg.Wait()
 	return nil
 }
+
+// asnWorkers bounds concurrent Team Cymru lookups.
+const asnWorkers = 8
 
 // cymruOrigin looks up the ASN, BGP prefix and country for an IP via
 // <reversed-ip>.origin.asn.cymru.com (origin6 for IPv6).
@@ -72,19 +97,27 @@ func cymruOrigin(ctx context.Context, ipStr string) (asn, prefix, country string
 	} else {
 		qname = reverseNibbles(ip) + ".origin6.asn.cymru.com."
 	}
-	txt := txtLookup(ctx, qname)
-	if txt == "" {
-		return "", "", "", false
-	}
-	// "15169 | 8.8.8.0/24 | US | arin | 1992-12-01"
+	return parseCymruOrigin(txtLookup(ctx, qname))
+}
+
+// parseCymruOrigin parses "15169 | 8.8.8.0/24 | US | arin | 1992-12-01". A
+// malformed answer (empty ASN field) yields ok=false instead of a panic.
+func parseCymruOrigin(txt string) (asn, prefix, country string, ok bool) {
 	parts := splitPipe(txt)
 	if len(parts) < 3 {
 		return "", "", "", false
 	}
-	asn = strings.Fields(parts[0])[0] // first ASN if multi-origin
-	prefix = parts[1]
-	country = parts[2]
-	return asn, prefix, country, asn != ""
+	fields := strings.Fields(parts[0])
+	if len(fields) == 0 {
+		return "", "", "", false
+	}
+	asn = fields[0] // first ASN if multi-origin
+	for _, r := range asn {
+		if r < '0' || r > '9' {
+			return "", "", "", false
+		}
+	}
+	return asn, parts[1], parts[2], true
 }
 
 // cymruASName resolves an AS number to its name via ASxxxx.asn.cymru.com.

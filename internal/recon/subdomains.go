@@ -67,14 +67,18 @@ func (s BruteforceSource) Run(ctx context.Context, c *core.Collector) error {
 	domain := c.Target.Domain
 	domID := graph.NodeID(graph.NodeDomain, domain)
 
-	// Wildcard detection: if a random subdomain resolves, the domain answers
-	// everything — record those IPs so we can discard wildcard noise.
+	// Wildcard detection: if random subdomains resolve, the domain answers
+	// everything — record those IPs so we can discard wildcard noise. Several
+	// probes over different resolvers: a single lost UDP answer used to hide the
+	// wildcard and flood the graph with thousands of fake subdomains.
 	wildcard := map[string]bool{}
-	if ips := fastLookupA(ctx, randSub()+"."+domain, 0); len(ips) > 0 {
-		for _, ip := range ips {
+	for i := 0; i < len(dnsResolvers); i++ {
+		for _, ip := range fastLookupA(ctx, randSub()+"."+domain, i) {
 			wildcard[ip] = true
 		}
-		c.Log(core.LogWarn, fmt.Sprintf("wildcard DNS detected (%d IPs) — filtering brute-force noise", len(wildcard)))
+	}
+	if len(wildcard) > 0 {
+		c.Log(core.LogWarn, fmt.Sprintf("обнаружен wildcard DNS (%d IP) — шум перебора отфильтрован", len(wildcard)))
 	}
 
 	conc := s.Cfg.MaxConcurrent * 8
@@ -117,13 +121,14 @@ func (s BruteforceSource) Run(ctx context.Context, c *core.Collector) error {
 			for _, ip := range ips {
 				ipID := c.Node(graph.NodeIP, ip, ip, nil)
 				c.Edge(subID, ipID, "resolves_to")
+				c.MarkResolved(host, ip)
 			}
 			atomic.AddInt64(&found, 1)
 			c.Flush()
 		}(w)
 	}
 	wg.Wait()
-	c.Log(core.LogInfo, fmt.Sprintf("brute-forced %d live subdomains from %d candidates", found, len(words)))
+	c.Log(core.LogInfo, fmt.Sprintf("перебором найдено живых поддоменов: %d из %d кандидатов", found, len(words)))
 	return nil
 }
 

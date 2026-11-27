@@ -51,29 +51,62 @@ func (s FuzzSource) Run(ctx context.Context, c *core.Collector) error {
 	if len(words) == 0 {
 		return nil
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("fuzzing %d host(s) × %d paths (%s)", len(bases), len(words), label))
+	c.Log(core.LogInfo, fmt.Sprintf("фаззинг: хостов %d × путей %d (%s)", len(bases), len(words), label))
+	// Hosts are fuzzed a few at a time. The per-host rate limit still applies to
+	// each host; one-by-one took ~2 min per host and blew the scan budget on
+	// targets with many web hosts.
+	hostSem := make(chan struct{}, fuzzHostWorkers)
+	var wg sync.WaitGroup
 	for _, base := range bases {
-		s.fuzzBase(ctx, c, base, words)
-		c.Flush()
+		if ctx.Err() != nil {
+			break
+		}
+		if !inScopeURL(c, base) {
+			continue
+		}
+		wg.Add(1)
+		hostSem <- struct{}{}
+		go func(base string) {
+			defer wg.Done()
+			defer func() { <-hostSem }()
+			s.fuzzBase(ctx, c, base, words)
+			c.Flush()
+		}(base)
 	}
+	wg.Wait()
 	return nil
 }
+
+// fuzzHostWorkers is how many hosts are fuzzed concurrently.
+const fuzzHostWorkers = 4
 
 // liveBases returns root URLs that responded to the http probe.
 func (s FuzzSource) liveBases(c *core.Collector) []string { return liveBaseURLs(c) }
 
 type fuzzHit struct {
-	url    string
-	word   string
-	status int
-	size   int
-	title  string
+	url      string
+	word     string
+	status   int
+	size     int
+	title    string
+	location string // redirect target for 3xx hits
+}
+
+// fuzzClient is probeClient WITHOUT redirect following: a fuzzer must report
+// the path's own status (301/302 → where), like ffuf/gobuster. Following the
+// redirect recorded the final page's 200 instead, so 3xx never showed up.
+var fuzzClient = &http.Client{
+	Timeout:   probeClient.Timeout,
+	Transport: probeClient.Transport,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
 }
 
 func (s FuzzSource) fuzzBase(ctx context.Context, c *core.Collector, base string, words []string) {
 	// Calibrate twice against random paths to learn the soft-404 signature.
-	s1, l1, _ := s.probe(ctx, base+"/"+randToken())
-	s2, l2, _ := s.probe(ctx, base+"/"+randToken())
+	s1, l1, _, _ := s.probe(ctx, base+"/"+randToken())
+	s2, l2, _, _ := s.probe(ctx, base+"/"+randToken())
 	softStatus := s1
 	softLen := l1
 	stableSoft := s1 == s2 && math.Abs(float64(l1-l2)) < 64
@@ -101,6 +134,9 @@ func (s FuzzSource) fuzzBase(ctx context.Context, c *core.Collector, base string
 	var hits []fuzzHit
 
 	for _, word := range words {
+		if ctx.Err() != nil {
+			break
+		}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(word string) {
@@ -115,7 +151,7 @@ func (s FuzzSource) fuzzBase(ctx context.Context, c *core.Collector, base string
 				return
 			}
 			target := base + "/" + word
-			status, size, body := s.probe(ctx, target)
+			status, size, body, location := s.probe(ctx, target)
 			if !s.filter.Allows(status) {
 				return
 			}
@@ -128,7 +164,7 @@ func (s FuzzSource) fuzzBase(ctx context.Context, c *core.Collector, base string
 				return
 			}
 			mu.Lock()
-			hits = append(hits, fuzzHit{url: target, word: word, status: status, size: size, title: pageTitle(body)})
+			hits = append(hits, fuzzHit{url: target, word: word, status: status, size: size, title: pageTitle(body), location: location})
 			mu.Unlock()
 		}(word)
 	}
@@ -141,18 +177,22 @@ func (s FuzzSource) fuzzBase(ctx context.Context, c *core.Collector, base string
 		threshold = 120
 	}
 	if len(hits) > threshold {
-		c.Log(core.LogWarn, fmt.Sprintf("%s → %d hits looks like a wildcard/soft-404 host; suppressed", base, len(hits)))
+		c.Log(core.LogWarn, fmt.Sprintf("%s → %d совпадений: похоже на wildcard/soft-404 хост, результаты скрыты", base, len(hits)))
 		return
 	}
 
 	baseID := graph.NodeID(graph.NodeURL, base)
 	for _, h := range hits {
-		id := c.Node(graph.NodeURL, h.url, "/"+h.word, map[string]any{
+		props := map[string]any{
 			"status": h.status, "size": h.size, "title": h.title, "source": "fuzz",
-		})
+		}
+		if h.location != "" {
+			props["location"] = h.location
+		}
+		id := c.Node(graph.NodeURL, h.url, "/"+h.word, props)
 		c.Edge(baseID, id, "path")
 	}
-	c.Log(core.LogInfo, fmt.Sprintf("%s → %d paths", base, len(hits)))
+	c.Log(core.LogInfo, fmt.Sprintf("%s → путей: %d", base, len(hits)))
 }
 
 func tolerance(softLen int) float64 {
@@ -163,22 +203,28 @@ func tolerance(softLen int) float64 {
 	return t
 }
 
-// probe GETs a URL and returns status, body size and a capped body copy.
-func (s FuzzSource) probe(ctx context.Context, url string) (status, size int, body []byte) {
+// probe GETs a URL (without following redirects) and returns status, body
+// size, a capped body copy and, for 3xx, the absolute redirect target.
+func (s FuzzSource) probe(ctx context.Context, url string) (status, size int, body []byte, location string) {
 	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, 0, nil
+		return 0, 0, nil, ""
 	}
 	req.Header.Set("User-Agent", s.Cfg.HTTPUserAgent)
-	resp, err := probeClient.Do(req)
+	resp, err := fuzzClient.Do(req)
 	if err != nil {
-		return 0, 0, nil
+		return 0, 0, nil, ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		if loc, err := resp.Location(); err == nil {
+			location = loc.String()
+		}
+	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
-	return resp.StatusCode, len(b), b
+	return resp.StatusCode, len(b), b, location
 }
 
 func looksNotFound(body []byte) bool {

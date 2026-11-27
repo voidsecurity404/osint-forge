@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // ExportVault writes the whole graph as an Obsidian vault under dir: one Markdown
@@ -114,17 +115,27 @@ func sortedPropKeys(p map[string]any) []string {
 	return keys
 }
 
-// safeName makes a string usable as a filename across platforms.
+// safeName makes a string usable as a filename across platforms and as an
+// Obsidian wikilink target ([ ] # ^ | have special meaning inside [[…]]).
 func safeName(s string) string {
 	repl := strings.NewReplacer(
 		"/", "-", "\\", "-", ":", "-", "*", "-", "?", "-",
-		"\"", "'", "<", "(", ">", ")", "|", "-", "\n", " ", "\t", " ",
+		"\"", "'", "<", "(", ">", ")", "|", "-", "\n", " ", "\t", " ", "\r", " ",
+		"[", "(", "]", ")", "#", "-", "^", "-",
 	)
 	s = repl.Replace(s)
 	s = strings.TrimSpace(s)
+	// Truncate on a rune boundary: a byte cut could split a multi-byte
+	// character and produce an invalid UTF-8 file name.
 	if len(s) > 120 {
-		s = s[:120]
+		cut := 120
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		s = strings.TrimSpace(s[:cut])
 	}
+	// Windows forbids names ending in a dot or space.
+	s = strings.TrimRight(s, ". ")
 	if s == "" {
 		s = "node"
 	}

@@ -16,7 +16,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
+	"strings"
+	"syscall"
 	"time"
 
 	"osint-forge/internal/config"
@@ -44,31 +47,41 @@ func (e stubEmitter) EmitLog(l core.LogLine) {
 	fmt.Fprintf(os.Stderr, "  · %-12s %s\n", l.Source, l.Message)
 }
 func (e stubEmitter) EmitProgress(p core.Progress) {
-	fmt.Fprintf(os.Stderr, "== %s (%d/%d) nodes=%d edges=%d\n", p.Phase, p.Done, p.Total, p.Nodes, p.Edges)
+	fmt.Fprintf(os.Stderr, "== %s (%d/%d) узлов=%d связей=%d\n", p.Phase, p.Done, p.Total, p.Nodes, p.Edges)
 }
 
 func main() {
-	active := flag.Bool("active", false, "also run active scans (nmap/http) — authorized targets only")
-	quiet := flag.Bool("quiet", false, "suppress per-node output")
-	obsidian := flag.String("obsidian", "", "export the result as an Obsidian vault to this directory")
-	timeout := flag.Duration("timeout", 0, "overall scan budget (e.g. 30m); 0 = config default")
-	noScope := flag.Bool("no-scope", false, "disable the active-probing scope guard (DANGEROUS)")
-	jsonOut := flag.String("json", "", "write a JSON report to this path")
-	mdOut := flag.String("md", "", "write a Markdown report to this path")
-	csvOut := flag.String("csv", "", "write a findings/CVE CSV to this path")
-	sarifOut := flag.String("sarif", "", "write a SARIF 2.1.0 report to this path")
-	htmlOut := flag.String("html", "", "write an HTML report to this path")
-	doDiff := flag.Bool("diff", false, "save this scan and print what changed since the previous run")
+	active := flag.Bool("active", false, "также выполнить активное сканирование (nmap/http) — только для разрешённых целей")
+	quiet := flag.Bool("quiet", false, "не выводить каждый найденный узел")
+	obsidian := flag.String("obsidian", "", "экспортировать результат как хранилище Obsidian в эту папку")
+	timeout := flag.Duration("timeout", 0, "общий лимит времени сканирования (например, 30m); 0 = из настроек")
+	noScope := flag.Bool("no-scope", false, "отключить защиту области сканирования (ОПАСНО)")
+	jsonOut := flag.String("json", "", "записать JSON-отчёт по этому пути")
+	mdOut := flag.String("md", "", "записать Markdown-отчёт по этому пути")
+	csvOut := flag.String("csv", "", "записать CSV с находками/CVE по этому пути")
+	sarifOut := flag.String("sarif", "", "записать отчёт SARIF 2.1.0 по этому пути")
+	htmlOut := flag.String("html", "", "записать HTML-отчёт по этому пути")
+	doDiff := flag.Bool("diff", false, "сохранить сканирование и показать изменения с прошлого запуска")
+	flag.Usage = func() {
+		fmt.Fprintln(os.Stderr, "использование: reconcli [флаги] <ip-или-домен>   (флаги указываются ДО цели)")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 	if flag.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: reconcli [-active] [-quiet] <ip-or-domain>")
+		if flag.NArg() > 1 && strings.HasPrefix(flag.Arg(1), "-") {
+			fmt.Fprintf(os.Stderr, "reconcli: %q указан после цели — флаги нужно писать ДО цели\n", flag.Arg(1))
+		}
+		flag.Usage()
 		os.Exit(2)
 	}
 
-	cfg, _ := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "config:", err, "(используются настройки по умолчанию)")
+	}
 	t := core.ParseTarget(flag.Arg(0))
-	if t.IP == "" && t.Domain == "" {
-		fmt.Fprintln(os.Stderr, "invalid target")
+	if !t.Valid {
+		fmt.Fprintf(os.Stderr, "неверная цель %q: укажите корректный IP-адрес или домен (например, 1.1.1.1 или example.com)\n", flag.Arg(0))
 		os.Exit(2)
 	}
 
@@ -88,19 +101,23 @@ func main() {
 		recon.ShodanSource{Cfg: cfg},
 		recon.CensysSource{Cfg: cfg},
 		recon.GitHubSource{Cfg: cfg},
+		scan.ParamSource{Cfg: cfg},
 	}
 	if *active {
 		sources = append(sources,
 			scan.NmapSource{Cfg: cfg},
 			scan.PortScanSource{Cfg: cfg},
 			scan.HTTPSource{Cfg: cfg},
+			scan.WebPortsSource{Cfg: cfg},
 			scan.RobotsSource{Cfg: cfg},
 			scan.FuzzSource{Cfg: cfg},
 			scan.TLSSource{Cfg: cfg},
 			scan.WebChecksSource{Cfg: cfg},
 			scan.TakeoverSource{Cfg: cfg},
-			scan.NucleiSource{Cfg: cfg},
+			scan.BuiltinChecksSource{Cfg: cfg},
+			scan.NucleiSource{Cfg: cfg}, // optional: only if external nuclei is installed
 			scan.ScreenshotSource{Cfg: cfg},
+			scan.JSAnalyzeSource{Cfg: cfg},
 			recon.AXFRSource{Cfg: cfg},
 			recon.HIBPSource{Cfg: cfg},
 		)
@@ -117,7 +134,10 @@ func main() {
 	pipe := core.NewPipeline(em, g, sources...)
 	pipe.SetScope(core.NewScope(t, cfg.ScopeStrict && !*noScope, cfg.ExtraScope))
 
-	ctx := context.Background()
+	// Ctrl+C stops the scan gracefully: the partial result is still printed
+	// and the reports are still written.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	budget := *timeout
 	if budget == 0 && cfg.ScanTimeoutMin > 0 {
 		budget = time.Duration(cfg.ScanTimeoutMin) * time.Minute
@@ -128,6 +148,10 @@ func main() {
 		defer cancel()
 	}
 	pipe.Run(ctx, t)
+	complete := ctx.Err() == nil
+	if !complete {
+		fmt.Fprintln(os.Stderr, "⚠ сканирование не завершилось полностью (остановлено или истёк лимит времени) — результат неполный")
+	}
 
 	// Final summary to stdout.
 	snap := g.Snapshot()
@@ -135,7 +159,7 @@ func main() {
 	for _, n := range snap.Nodes {
 		byType[n.Type]++
 	}
-	fmt.Printf("\n=== RESULT for %s ===\n", flag.Arg(0))
+	fmt.Printf("\n=== РЕЗУЛЬТАТ для %s ===\n", flag.Arg(0))
 	var types []string
 	for t := range byType {
 		types = append(types, string(t))
@@ -144,15 +168,15 @@ func main() {
 	for _, t := range types {
 		fmt.Printf("%-12s %d\n", t, byType[graph.NodeType(t)])
 	}
-	fmt.Printf("TOTAL        %d nodes, %d edges\n", len(snap.Nodes), len(snap.Edges))
+	fmt.Printf("ИТОГО        %d узлов, %d связей\n", len(snap.Nodes), len(snap.Edges))
 
 	if *obsidian != "" {
 		n, err := g.ExportVault(*obsidian)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "obsidian export:", err)
+			fmt.Fprintln(os.Stderr, "экспорт Obsidian:", err)
 			os.Exit(1)
 		}
-		fmt.Printf("Obsidian vault: %d notes → %s\n", n, *obsidian)
+		fmt.Printf("Хранилище Obsidian: %d заметок → %s\n", n, *obsidian)
 	}
 
 	// Reports.
@@ -161,11 +185,11 @@ func main() {
 			return
 		}
 		if err != nil {
-			fmt.Fprintln(os.Stderr, label+" export:", err)
+			fmt.Fprintln(os.Stderr, label+" экспорт:", err)
 			return
 		}
 		if err := os.WriteFile(path, data, 0o644); err != nil {
-			fmt.Fprintln(os.Stderr, label+" write:", err)
+			fmt.Fprintln(os.Stderr, label+" запись:", err)
 			return
 		}
 		fmt.Printf("%s → %s\n", label, path)
@@ -189,23 +213,28 @@ func main() {
 		writeReport(*htmlOut, []byte(report.HTML(snap, flag.Arg(0))), nil, "HTML")
 	}
 
-	// Monitoring: save this scan, then report what changed vs the previous one.
+	// Monitoring: report what changed vs the previous stored scan, then save
+	// this one (diff first: Save may replace an identical last scan).
 	if *doDiff {
 		label := t.Domain
 		if label == "" {
 			label = t.IP
 		}
-		if _, err := history.Save(label, snap); err != nil {
-			fmt.Fprintln(os.Stderr, "history save:", err)
+		diff, err := history.DiffAgainstPrevious(label, snap)
+		if !complete {
+			fmt.Fprintln(os.Stderr, "diff: неполное сканирование не сохранено и не сравнивалось")
+			os.Exit(1)
 		}
-		diff, err := history.DiffLastTwo(label)
+		if _, serr := history.Save(label, snap); serr != nil {
+			fmt.Fprintln(os.Stderr, "сохранение истории:", serr)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "diff:", err)
 		} else if !diff.HasPrevious {
-			fmt.Println("\n=== DIFF === (birinchi scan — taqqoslash uchun oldingi natija yo'q)")
+			fmt.Println("\n=== DIFF === (первое сканирование — сравнивать не с чем)")
 		} else {
-			fmt.Printf("\n=== DIFF vs %s ===\n", diff.Previous.Format("2006-01-02 15:04"))
-			fmt.Printf("  +%d yangi, -%d yo'qolgan\n", len(diff.Added), len(diff.Removed))
+			fmt.Printf("\n=== DIFF относительно %s ===\n", diff.Previous.Format("2006-01-02 15:04"))
+			fmt.Printf("  +%d новых, -%d исчезло\n", len(diff.Added), len(diff.Removed))
 			for _, n := range diff.Added {
 				fmt.Printf("  + [%s] %s\n", n.Type, n.Label)
 			}

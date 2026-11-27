@@ -26,3 +26,30 @@ func TestParseTarget(t *testing.T) {
 		}
 	}
 }
+
+func TestValidDomain(t *testing.T) {
+	good := []string{"example.com", "sub.example.com", "a-b.example.co.uk", "xn--80ak6aa92e.com", "x1.io"}
+	for _, g := range good {
+		if !ValidDomain(g) {
+			t.Errorf("%q should be valid", g)
+		}
+	}
+	bad := []string{"", "example", "!!!@@@", "a..b", "-x.com", "x-.com", "a b.com", "foo.1", "http://x"}
+	for _, b := range bad {
+		if ValidDomain(b) {
+			t.Errorf("%q should be invalid", b)
+		}
+	}
+}
+
+func TestParseTargetValid(t *testing.T) {
+	if !ParseTarget("example.com").Valid {
+		t.Error("example.com should be valid")
+	}
+	if !ParseTarget("1.2.3.4").Valid {
+		t.Error("ip should be valid")
+	}
+	if ParseTarget("!!!bad").Valid {
+		t.Error("junk should be invalid")
+	}
+}

@@ -4,8 +4,11 @@ package recon
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
+
+	"golang.org/x/net/publicsuffix"
 
 	"osint-forge/internal/core"
 	"osint-forge/internal/graph"
@@ -45,6 +48,7 @@ func resolveHost(ctx context.Context, c *core.Collector, host string, hostType g
 		ip := a.IP.String()
 		ipID := c.Node(graph.NodeIP, ip, ip, nil)
 		c.Edge(hostID, ipID, "resolves_to")
+		c.MarkResolved(host, ip) // live resolution of an in-scope name → in-scope IP
 	}
 	c.Log(core.LogInfo, host+" → "+itoaAddrs(addrs))
 }
@@ -62,6 +66,9 @@ func lookupRecords(ctx context.Context, c *core.Collector, domain string) {
 	if mxs, err := resolver.LookupMX(ctx, domain); err == nil {
 		for _, mx := range mxs {
 			h := strings.TrimSuffix(mx.Host, ".")
+			if h == "" {
+				continue // null MX (RFC 7505): the domain accepts no mail
+			}
 			id := c.Node(graph.NodeSubdomain, h, h, map[string]any{"via": "mx"})
 			c.Edge(domID, id, "mx")
 		}
@@ -69,16 +76,62 @@ func lookupRecords(ctx context.Context, c *core.Collector, domain string) {
 	if nss, err := resolver.LookupNS(ctx, domain); err == nil {
 		for _, ns := range nss {
 			h := strings.TrimSuffix(ns.Host, ".")
+			if h == "" {
+				continue
+			}
 			id := c.Node(graph.NodeSubdomain, h, h, map[string]any{"via": "ns"})
 			c.Edge(domID, id, "ns")
 		}
 	}
-	var txts []string
-	if t, err := resolver.LookupTXT(ctx, domain); err == nil && len(t) > 0 {
-		txts = t
+	txts, err := resolver.LookupTXT(ctx, domain)
+	if err != nil && !isNotFound(err) {
+		// SERVFAIL / timeout: we simply don't know — never report "SPF missing"
+		// or "DMARC missing" on a lookup failure (false positive).
+		c.Log(core.LogWarn, "запрос TXT не удался, проверки SPF/DMARC пропущены: "+err.Error())
+		return
+	}
+	if len(txts) > 0 {
 		c.Node(graph.NodeDomain, domain, domain, map[string]any{"txt": txts})
 	}
 	checkEmailSecurity(ctx, c, domain, domID, txts)
+}
+
+// isNotFound reports whether a lookup error means "no such record / name"
+// (an authoritative answer) rather than a transient failure.
+func isNotFound(err error) bool {
+	var de *net.DNSError
+	return errors.As(err, &de) && de.IsNotFound
+}
+
+// orgDomain returns the organisational (registrable) domain of a host, e.g.
+// api.eu.example.co.uk → example.co.uk.
+func orgDomain(host string) string {
+	if reg, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		return reg
+	}
+	return host
+}
+
+// lookupDMARC returns the DMARC record governing domain. Per RFC 7489 §6.6.3 a
+// subdomain without its own _dmarc record inherits the organisational
+// domain's policy. ok=false means the lookup failed (unknown, not "missing").
+func lookupDMARC(ctx context.Context, domain string) (record string, ok bool) {
+	names := []string{"_dmarc." + domain}
+	if org := orgDomain(domain); org != domain {
+		names = append(names, "_dmarc."+org)
+	}
+	for _, name := range names {
+		recs, err := resolver.LookupTXT(ctx, name)
+		if err != nil && !isNotFound(err) {
+			return "", false
+		}
+		for _, r := range recs {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(r)), "v=dmarc1") {
+				return r, true
+			}
+		}
+	}
+	return "", true
 }
 
 // checkEmailSecurity flags missing/weak SPF and DMARC — common email-spoofing
@@ -86,36 +139,56 @@ func lookupRecords(ctx context.Context, c *core.Collector, domain string) {
 func checkEmailSecurity(ctx context.Context, c *core.Collector, domain, domID string, txts []string) {
 	var spf string
 	for _, t := range txts {
-		if strings.HasPrefix(strings.ToLower(t), "v=spf1") {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(t)), "v=spf1") {
 			spf = t
 			break
 		}
 	}
-	if spf == "" {
-		c.Finding("medium", "spf-missing:"+domain, "SPF yozuvi yo'q",
-			"Domenda SPF yozuvi topilmadi — email spoofing osonlashadi.", domID)
-	} else if strings.Contains(spf, "+all") {
-		c.Finding("high", "spf-weak:"+domain, "SPF juda ochiq (+all)",
-			"SPF '+all' har qanday serverga domen nomidan xat yuborishga ruxsat beradi.", domID)
-	}
-
-	// DMARC lives at _dmarc.<domain> as a TXT record.
-	dmarc := ""
-	if t, err := resolver.LookupTXT(ctx, "_dmarc."+domain); err == nil {
-		for _, r := range t {
-			if strings.HasPrefix(strings.ToLower(r), "v=dmarc1") {
-				dmarc = r
-				break
+	// SPF matters for names that send/receive mail. A plain subdomain (www,
+	// api…) without MX records not having SPF is normal, not a finding.
+	isOrg := orgDomain(domain) == domain
+	hasMX := false
+	if mxs, err := resolver.LookupMX(ctx, domain); err == nil {
+		for _, mx := range mxs {
+			if strings.TrimSuffix(mx.Host, ".") != "" {
+				hasMX = true
 			}
 		}
 	}
-	if dmarc == "" {
-		c.Finding("medium", "dmarc-missing:"+domain, "DMARC yozuvi yo'q",
-			"DMARC siyosati yo'q — spoofing xatlariga qarshi himoya zaif.", domID)
-	} else if strings.Contains(strings.ToLower(dmarc), "p=none") {
-		c.Finding("low", "dmarc-none:"+domain, "DMARC p=none",
-			"DMARC faqat kuzatuv rejimida (p=none) — spoofing bloklanmaydi.", domID)
+	switch {
+	case spf == "" && (isOrg || hasMX):
+		c.Finding("medium", "spf-missing:"+domain, "Нет записи SPF",
+			"У домена нет записи SPF — подделка отправителя писем упрощается.", domID)
+	case spf != "" && strings.Contains(strings.ToLower(spf), "+all"):
+		c.Finding("high", "spf-weak:"+domain, "SPF слишком открыт (+all)",
+			"SPF '+all' разрешает любому серверу отправлять письма от имени домена.", domID)
 	}
+
+	// DMARC lives at _dmarc.<domain> (or the organisational domain) as TXT.
+	dmarc, ok := lookupDMARC(ctx, domain)
+	if !ok {
+		return
+	}
+	if dmarc == "" {
+		c.Finding("medium", "dmarc-missing:"+domain, "Нет записи DMARC",
+			"Политики DMARC нет — защита от поддельных писем слабая.", domID)
+	} else if dmarcTag(dmarc, "p") == "none" {
+		c.Finding("low", "dmarc-none:"+domain, "DMARC p=none",
+			"DMARC только в режиме мониторинга (p=none) — поддельные письма не блокируются.", domID)
+	}
+}
+
+// dmarcTag returns the lower-cased value of one tag of a DMARC record
+// ("v=DMARC1; p=reject; sp=none" → p = "reject"). A plain substring search
+// would read "sp=none" as "p=none".
+func dmarcTag(record, tag string) string {
+	for _, part := range strings.Split(record, ";") {
+		k, v, ok := strings.Cut(part, "=")
+		if ok && strings.EqualFold(strings.TrimSpace(k), tag) {
+			return strings.ToLower(strings.TrimSpace(v))
+		}
+	}
+	return ""
 }
 
 func reverseLookup(ctx context.Context, c *core.Collector, ip string) {

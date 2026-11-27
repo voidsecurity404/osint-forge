@@ -40,7 +40,12 @@ type nucleiResult struct {
 }
 
 func (s NucleiSource) Run(ctx context.Context, c *core.Collector) error {
-	bases := liveBaseURLs(c)
+	var bases []string
+	for _, b := range liveBaseURLs(c) {
+		if inScopeURL(c, b) {
+			bases = append(bases, b)
+		}
+	}
 	if len(bases) == 0 {
 		return nil
 	}
@@ -55,11 +60,16 @@ func (s NucleiSource) Run(ctx context.Context, c *core.Collector) error {
 	}
 	_ = tmp.Close()
 
-	args := []string{"-silent", "-jsonl", "-disable-update-check", "-l", tmp.Name()}
+	// Honour the configured politeness limit (nuclei's own default is 150 req/s).
+	rate := s.Cfg.RateLimitPerHost
+	if rate <= 0 {
+		rate = 40
+	}
+	args := []string{"-silent", "-jsonl", "-disable-update-check", "-rl", itoa(rate), "-l", tmp.Name()}
 	cmd := exec.CommandContext(ctx, "nuclei", args...)
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	c.Log(core.LogInfo, "running nuclei on "+itoa(len(bases))+" host(s)")
+	c.Log(core.LogInfo, "запуск nuclei, хостов: "+itoa(len(bases)))
 	// nuclei exits non-zero when it finds nothing on some targets; parse output
 	// regardless of exit status.
 	_ = cmd.Run()
@@ -88,10 +98,10 @@ func (s NucleiSource) Run(ctx context.Context, c *core.Collector) error {
 		baseID := graph.NodeID(graph.NodeURL, strings.TrimSuffix(r.Host, "/"))
 		c.Finding(sev, "nuclei:"+r.TemplateID+":"+at,
 			"Nuclei: "+title+" ("+at+")",
-			"Nuclei shabloni ("+r.TemplateID+") mos keldi: "+at, baseID)
+			"Сработал шаблон Nuclei ("+r.TemplateID+"): "+at, baseID)
 		count++
 	}
-	c.Log(core.LogInfo, "nuclei: "+itoa(count)+" matches")
+	c.Log(core.LogInfo, "nuclei: совпадений "+itoa(count))
 	c.Flush()
 	return nil
 }

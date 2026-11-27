@@ -30,7 +30,10 @@ func (s Source) Applicable(core.Target) bool { return s.Store != nil }
 
 func (s Source) Run(ctx context.Context, c *core.Collector) error {
 	services := c.ListByType(graph.NodeService)
-	if len(services) == 0 {
+	// CVEs another source already reported (Shodan's "vulns") still need the KEV
+	// flag and EPSS score, even when no service could be matched.
+	existing := c.ListByType(graph.NodeCVE)
+	if len(services) == 0 && len(existing) == 0 {
 		return nil
 	}
 
@@ -40,8 +43,17 @@ func (s Source) Run(ctx context.Context, c *core.Collector) error {
 	// Deduplicate identical product/version queries within this run.
 	done := map[string][]Match{}
 	cveIDs := map[string]bool{}
+	for _, id := range existing {
+		cveIDs[id] = true
+		if kev[id] {
+			c.Node(graph.NodeCVE, id, id, map[string]any{"known_exploited": true})
+		}
+	}
 
 	for _, key := range services {
+		if ctx.Err() != nil {
+			break
+		}
 		node, ok := c.GetNode(graph.NodeService, key)
 		if !ok {
 			continue
@@ -93,12 +105,13 @@ func (s Source) Run(ctx context.Context, c *core.Collector) error {
 			c.Edge(svcID, cveID, "has_cve")
 			cveIDs[m.ID] = true
 		}
-		c.Log(core.LogInfo, fmt.Sprintf("%s → %d CVEs", node.Label, len(matches)))
+		c.Log(core.LogInfo, fmt.Sprintf("%s → %d CVE", node.Label, len(matches)))
 		c.Flush()
 	}
 
+	c.Flush()
 	// Enrich every CVE node with its EPSS exploitation-probability score.
-	if len(cveIDs) > 0 {
+	if len(cveIDs) > 0 && ctx.Err() == nil {
 		ids := make([]string, 0, len(cveIDs))
 		for id := range cveIDs {
 			ids = append(ids, id)
@@ -107,7 +120,7 @@ func (s Source) Run(ctx context.Context, c *core.Collector) error {
 		for id, score := range epss {
 			c.Node(graph.NodeCVE, id, id, map[string]any{"epss": score})
 		}
-		c.Log(core.LogInfo, fmt.Sprintf("EPSS scored %d/%d CVEs", len(epss), len(ids)))
+		c.Log(core.LogInfo, fmt.Sprintf("EPSS получен для %d/%d CVE", len(epss), len(ids)))
 		c.Flush()
 	}
 	return nil

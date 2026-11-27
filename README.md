@@ -1,400 +1,1175 @@
-# osint-forge
+# 🕸️ osint-forge
 
-**Graph-based OSINT & attack-surface reconnaissance for a single domain or IP.**
+**osint-forge** — инструмент разведки (OSINT + recon), который собирает в одном
+месте всю видимую из интернета картину вокруг одной цели (домена или IP),
+показывает её в виде **живого графа** и анализирует с точки зрения
+безопасности.
 
-osint-forge takes one target, runs passive discovery and — only with your
-explicit authorization — active probing, and assembles everything it finds into
-a **live, cross-linked graph**: subdomains, IPs, open ports, services,
-technologies, TLS certificates, ASNs, emails, archived URLs, security findings
-and matched CVEs. The graph is rendered in an Obsidian-style view you can click
-through, and exported to six formats (plus a full Obsidian vault).
+Вы вводите один домен или IP — программа собирает из десятков источников
+поддомены, IP-адреса, порты, сервисы, сертификаты, технологии, URL, email-адреса,
+известные уязвимости (CVE) и находки безопасности и рисует их в виде **графа в
+стиле Obsidian**. Каждый найденный объект связан с тем, откуда он появился,
+поэтому вся картина видна с одного взгляда.
 
-It ships as a **Wails desktop app** and a **headless CLI** (`reconcli`) that
-share the exact same scanning engine — the GUI for interactive investigation,
-the CLI for automation, CI pipelines and continuous monitoring.
+Программа — это **один исполняемый файл на Go**: при запуске он поднимает
+встроенный веб-сервер, а весь интерфейс открывается в браузере по адресу
+`http://localhost:8081`. Устанавливать внешние программы не обязательно:
+проверки по шаблонам встроены в программу, скриншоты делаются установленным в
+системе браузером, всё остальное работает на чистом Go.
 
-[![CI](https://github.com/voidsecurity404/osint-forge/actions/workflows/ci.yml/badge.svg)](https://github.com/voidsecurity404/osint-forge/actions/workflows/ci.yml)
-![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-444)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+Интерфейс, сообщения журнала, находки, отчёты, уведомления и CLI — **на русском
+языке**.
 
-> ⚠️ **Authorization is required.** Active scanning (nmap, HTTP probing,
-> fuzzing, zone transfer, nuclei, screenshots) only runs when you explicitly
-> assert that you are allowed to test the target. Use it **only** against assets
-> you own or have written permission to assess. You are responsible for staying
-> within scope and within the law.
+```
+   домен / IP   ──▶   10+ источников   ──▶   живой граф   ──▶   анализ + отчёт
+   example.com         DNS, crt.sh,           узлы и            теги, CVE,
+                       nmap, wayback…         связи             экспорт, diff
+```
 
----
-
-## Table of contents
-
-- [Quick start](#quick-start)
-- [What it does](#what-it-does)
-- [How it works](#how-it-works)
-- [Data sources](#data-sources)
-- [CVE engine](#cve-engine)
-- [Reports & exports](#reports--exports)
-- [Continuous monitoring (diffing)](#continuous-monitoring-diffing)
-- [CLI usage](#cli-usage)
-- [Configuration & API keys](#configuration--api-keys)
-- [Safety model](#safety-model)
-- [Where your data lives](#where-your-data-lives)
-- [Requirements](#requirements)
-- [Building](#building)
-- [Project layout](#project-layout)
-- [License & disclaimer](#license--disclaimer)
+> ⚠️ **Предупреждение:** активное сканирование (сканирование портов,
+> HTTP-запросы, фаззинг) допустимо только для целей, которые **принадлежат вам
+> или на которые есть письменное разрешение**. Сканирование без разрешения во
+> многих странах незаконно. Пассивные источники не отправляют цели ни одного
+> пакета.
 
 ---
 
-## Quick start
+## Содержание
 
-The simplest way to run the desktop app is the bundled launcher, **`start.sh`**.
-It works from any shell (bash, zsh, fish) because it re-executes itself under
-bash, and it resolves its own location — so you can run it from anywhere.
+- [Зачем osint-forge](#зачем-osint-forge)
+- [Быстрый старт](#быстрый-старт)
+- [Как это работает](#как-это-работает)
+- [Этапы сканирования](#этапы-сканирования)
+- [Источники данных](#источники-данных)
+- [Граф: типы узлов](#граф-типы-узлов)
+- [Встроенные возможности](#встроенные-возможности)
+- [Веб-интерфейс](#веб-интерфейс)
+- [Движок CVE](#движок-cve)
+- [Отчёты и экспорт](#отчёты-и-экспорт)
+- [Непрерывный мониторинг](#непрерывный-мониторинг)
+- [Модель безопасности](#модель-безопасности)
+- [Настройки и ключи API](#настройки-и-ключи-api)
+- [Где хранятся данные](#где-хранятся-данные)
+- [Командная строка (CLI)](#командная-строка-cli)
+- [HTTP API](#http-api)
+- [Сборка](#сборка)
+- [Тесты](#тесты)
+- [Структура проекта](#структура-проекта)
+- [Решение проблем](#решение-проблем)
+- [Известные ограничения и незавершённые работы](#известные-ограничения-и-незавершённые-работы)
+- [Лицензия и ответственность](#лицензия-и-ответственность)
+
+---
+
+## Зачем osint-forge
+
+В обычном процессе разведки вы по очереди запускаете десятки отдельных
+инструментов (subfinder, nmap, httpx, nuclei, waybackurls…), вручную
+объединяете результаты и ищете смысл в текстовых файлах. **osint-forge**
+собирает всё это под одним движком и показывает результат как **связанный
+граф**, поэтому:
+
+- **Понятно с одного взгляда** — видно, какой IP относится к какому домену,
+  какой порт — к какому сервису, какая CVE — к какому сервису.
+- **Без дублей** — если один и тот же объект найден разными источниками, он
+  сливается в один узел (детерминированный ID: `ip:1.2.3.4`).
+- **Безопасно** — без согласия (consent) не отправляется ни одного активного
+  запроса, а область сканирования (scope) не выходит за пределы цели.
+- **Удобно для обучения** — для каждого узла есть подсказка на русском: «почему
+  это важно, что проверить вручную и какими инструментами».
+
+---
+
+## Быстрый старт
+
+Самый простой способ — встроенный скрипт `start.sh`. При первом запуске он сам
+собирает фронтенд и сервер, затем запускает веб-сервер:
 
 ```sh
 git clone https://github.com/voidsecurity404/osint-forge.git
 cd osint-forge
 
-./start.sh              # run the app (builds the binary on first run if missing)
+./start.sh            # в браузере: http://localhost:8081
 ```
 
-`start.sh` understands a few subcommands:
+Команды `start.sh`:
 
-| Command            | What it does                                                        |
-| ------------------ | ------------------------------------------------------------------- |
-| `./start.sh`       | Run the prebuilt app. If no binary exists yet, it builds one first. |
-| `./start.sh run`   | Same as above (explicit).                                           |
-| `./start.sh dev`   | Run in **dev mode** with hot reload (needs Go + the Wails CLI).     |
-| `./start.sh build` | (Re)build the production binary into `build/bin/osint-forge`.       |
-| `./start.sh help`  | Print the built-in help.                                            |
+| Команда                               | Что делает                                                         |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `./start.sh`                          | Запускает сервер (при первом запуске или после изменения кода сначала собирает его). |
+| `./start.sh build`                    | Заново собирает фронтенд и сервер.                                 |
+| `./start.sh dev`                      | Go-сервер (`:8081`) + горячая перезагрузка Vite. Интерфейс открывается по адресу Vite (по умолчанию `http://localhost:5173`), запросы `/api` проксируются на 8081. |
+| `./start.sh run -open`                | Автоматически открывает браузер.                                   |
+| `./start.sh run -addr 0.0.0.0:8081`   | Слушает на всех сетевых интерфейсах (**авторизации нет!** — см. ниже). |
+| `./start.sh help`                     | Выводит встроенную справку.                                        |
 
-Under the hood it builds with the `webkit2_41` tag (required on Arch/Omarchy,
-where only `webkit2gtk-4.1` exists) and, if [`mise`](https://mise.jdx.dev) is
-installed, uses it to put the Go toolchain and the Wails CLI on `PATH`. Running
-a prebuilt binary needs none of that — only building does.
+Все аргументы после `run` передаются бинарнику как есть. У самого бинарника
+только два флага: `-addr` (по умолчанию `127.0.0.1:8081`) и `-open`.
 
-Prefer `make`? See [Building](#building). Want the headless scanner instead of
-the GUI? Jump to [CLI usage](#cli-usage).
+По умолчанию сервер слушает только `127.0.0.1:8081` (этот компьютер). API
+отклоняет запросы с других сайтов (защита от CSRF), поэтому другие открытые в
+браузере страницы не могут им управлять.
+
+**Что понадобится:**
+
+- **Для запуска** — ничего (один статический файл).
+- **Для сборки** — [Go 1.26+](https://go.dev) и [Node.js](https://nodejs.org)
+  + npm (только для сборки интерфейса; результат встраивается в бинарник).
+- **Необязательно** — `nmap` (точнее версии сервисов → точнее CVE), Chromium
+  или Firefox (скриншоты), `nuclei` (дополнительные шаблоны). Если их нет,
+  соответствующий этап пропускается или работает резервная реализация на Go.
+
+### Форматы цели
+
+В поле цели можно ввести следующее — значение сначала нормализуется:
+
+| Ввод                                         | Как интерпретируется                                      |
+| -------------------------------------------- | --------------------------------------------------------- |
+| `example.com`                                | Домен                                                     |
+| `https://www.example.com:8443/login?x=1`     | `www.example.com` — схема, порт, путь и запрос отбрасываются |
+| `1.1.1.1`                                    | Адрес IPv4                                                |
+| `2606:4700::1111`, `[2606:4700::1111]:443`   | Адрес IPv6                                                |
+| `!!!`, `localhost`, `a..b`, `-x.com`         | **Отклоняется** — нет TLD или домен некорректен           |
+
+Домен должен состоять минимум из двух частей (например, `имя.tld`), а TLD не
+может состоять только из цифр. Как интерфейс поймёт цель, можно заранее
+посмотреть через `GET /api/parse?target=…`.
 
 ---
 
-## What it does
+## Как это работает
 
-- **Single input, full picture.** Give it `example.com` or `203.0.113.10`; it
-  normalizes URLs, ports and IPv6 brackets for you, then fans out across every
-  applicable source.
-- **Passive OSINT by default.** DNS, RDAP/WHOIS, Certificate Transparency,
-  passive DNS, the Wayback Machine, ASN mapping, subdomain brute-force and
-  (with keys) Shodan, Censys, GitHub code search — none of which send a single
-  packet to the target.
-- **Authorized active probing.** Port and service scanning (nmap, with a
-  pure-Go fallback), HTTP/TLS fingerprinting, content fuzzing, robots/sitemap
-  harvesting, web-security checks, subdomain-takeover detection, nuclei
-  templates and headless screenshots.
-- **Automatic CVE matching.** Discovered service and technology versions are
-  matched against the NVD, then enriched with CISA **KEV** (known-exploited)
-  and FIRST **EPSS** (exploitation probability) so you see what actually
-  matters first.
-- **A graph you can read.** Everything becomes nodes and edges rendered with
-  Cytoscape.js; click any node for its details, open URLs/CVEs, or fetch a live
-  page's raw HTML from the detail panel.
-- **Shareable output.** Export to JSON, HTML, Markdown, CSV, SARIF, or a
-  cross-linked Obsidian vault.
-- **Change detection.** Re-scan a target and get a diff of what appeared or
-  disappeared since last time — new subdomains, new open ports, new CVEs.
+osint-forge состоит из трёх слоёв:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Браузер (Svelte + Cytoscape.js)                         │
+│  - граф, таблица, галерея, панели                        │
+└───────────────┬──────────────────────┬──────────────────┘
+                │ JSON API (/api/*)     │ SSE (/api/events)
+                │ запросы               │ живые обновления
+┌───────────────▼──────────────────────▼──────────────────┐
+│  Веб-сервер на Go (main.go, api.go, sse.go)               │
+│  - HTTP-маршруты, рассылка событий (hub), отдача SPA      │
+└───────────────┬──────────────────────────────────────────┘
+                │
+┌───────────────▼──────────────────────────────────────────┐
+│  Движок сканирования (internal/)                          │
+│  core · graph · recon · scan · cve · history · notes …    │
+└───────────────────────────────────────────────────────────┘
+```
+
+- **Фронтенд** — Svelte 5 (runes) + граф на Cytoscape.js. После сборки
+  (`frontend/dist`) полностью встраивается в бинарник Go (`go:embed`).
+- **Веб-сервер** — принимает каждый запрос браузера через JSON API и в
+  реальном времени передаёт результаты сканирования через **Server-Sent
+  Events (SSE)**.
+- **Движок** — каждая возможность — это `core.Source`, небольшой независимый
+  модуль разведки. Движок запускает их поэтапно (см. ниже).
+
+В центре графа — **устойчивая к конкурентному доступу** модель данных. Если в
+одном источнике происходит ошибка (panic), она перехватывается и записывается в
+журнал — **сканирование целиком никогда не падает**, остальные источники
+продолжают работу.
+
+Одновременно выполняется только **одно** сканирование. Каждое новое
+сканирование начинается с чистого графа; по завершении результат автоматически
+сохраняется в историю.
+
+**Устойчивость:**
+
+- После перезапуска сервера последнее сканирование автоматически
+  восстанавливается.
+- Если во время сканирования обновить страницу или открыть вторую вкладку,
+  граф заново синхронизируется с сервером. Узлы, которых больше нет в графе
+  сервера, убираются с экрана — ничего не теряется и ничего устаревшего не
+  остаётся.
+- Откуда бы ни было запущено сканирование (эта вкладка, другая вкладка или
+  мониторинг), **все открытые вкладки** видят его, очищают граф и рисуют новый
+  (событие `scan:start`). Если открыть сканирование из истории, другие вкладки
+  тоже обновятся.
+- Модель данных безопасна, даже когда источники одновременно читают граф и
+  пишут в него: чтение всегда идёт из копии узла. Программа проверена race
+  detector'ом (`go test -race`).
 
 ---
 
-## How it works
+## Этапы сканирования
 
-Every capability is a `core.Source` — a small, self-contained unit of
-reconnaissance. The pipeline runs them in **four ordered stages**, and within a
-stage every source runs **concurrently**, streaming graph deltas to the UI as
-they arrive:
+Источники работают **в шесть этапов** последовательно, а внутри этапа —
+**параллельно**. Следующий этап использует то, что нашёл предыдущий:
 
 ```
-  Discovery  ─▶  Resolve  ─▶  Probe  ─▶  Enrich
-  (passive:     (names →     (active:     (derived: CVEs,
-   find names)   IPs)         scan what    reports, breach
-                              was found)    checks)
+ Обнаружение → Разрешение имён → Зондирование → Веб-порты → Обогащение → Анализ
+ (Discovery)   (Resolve)         (Probe)        (Web)       (Enrich)     (Post)
+ пассивный     имена → IP        активно:       веб на      производные: итоговый
+ поиск имён                      порты, HTTP    нестанд.    CVE, TLS,    анализ:
+                                                портах      фаззинг,     параметры
+                                                            находки
 ```
 
-- **Discovery** — passive sources find names and infrastructure (DNS, crt.sh,
-  OTX, brute-force, …).
-- **Resolve** — discovered hostnames are resolved to IPs so active probing has
-  concrete targets.
-- **Probe** — active sources hit what was found (port scan, HTTP, reverse-IP,
-  zone transfer, …).
-- **Enrich** — derived analysis runs last (CVE matching, TLS checks, fuzzing,
-  takeover, breach lookups, report data).
+В интерфейсе и журнале этапы показываются по-русски; в коде и API у них
+стабильные английские ключи (в скобках).
 
-The central data model (`internal/graph`) is a concurrency-safe graph. Node IDs
-are deterministic (e.g. `ip:203.0.113.10`), so the *same* entity discovered by
-different sources collapses into a single node instead of duplicating. A panic
-in any one source is recovered and logged — it **never** crashes the scan, and
-the remaining sources carry on.
+1. **Обнаружение (Discovery)** — пассивные источники находят имена и
+   инфраструктуру (DNS, RDAP, crt.sh, OTX, перебор поддоменов).
+2. **Разрешение имён (Resolve)** — найденные имена хостов превращаются в IP,
+   чтобы у активного сканирования были конкретные цели.
+3. **Зондирование (Probe)** — активные источники проверяют найденное
+   (сканирование портов, HTTP, reverse-IP, перенос зоны). Shodan и Censys хоть
+   и пассивны, работают на этом этапе — чтобы найденные ими версии сервисов
+   успели попасть в сопоставление CVE.
+4. **Веб-порты (Web)** — веб-сервисы на **нестандартных портах**, найденных
+   nmap или сканером портов (8080, 8443, 3000…), тоже зондируются — для них
+   создаются URL-узлы, коды статуса, фаззинг и проверки.
+5. **Обогащение (Enrich)** — производный анализ: сопоставление CVE, TLS,
+   веб-проверки, фаззинг, захват поддоменов, анализ JS, встроенные шаблоны,
+   скриншоты, а также Wayback, ASN, GitHub и HIBP.
+6. **Анализ (Post)** — итоговый анализ по всему найденному: извлекает параметры
+   URL и помечает их как кандидатов на SQLi/XSS/redirect/LFI.
 
-The desktop GUI and the `reconcli` CLI are two front-ends over this one engine,
-so a scan behaves identically whether you run it interactively or in CI.
+Точный этап каждого источника (в скобках — имя, которое видно в панели
+«Источники» и в журнале):
+
+| Этап                | Источники                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| **Обнаружение**     | `dns`, `whois/rdap`, `crt.sh`, `otx`, `subdomain-brute`                                      |
+| **Разрешение имён** | `dns-resolve`                                                                               |
+| **Зондирование**    | `nmap` *(или, если его нет, `portscan`)*, `http-probe`, `reverse-ip`, `zone-transfer`, `shodan`, `censys` |
+| **Веб-порты**       | `http-ports`                                                                                |
+| **Обогащение**      | `cve`, `tls`, `webchecks`, `checks`, `fuzz`, `takeover`, `js-analyze`, `robots/sitemap`, `screenshots`, `nuclei`, `wayback`, `asn`, `github`, `hibp` |
+| **Анализ**          | `params`                                                                                    |
+
+Источник без ключа или нужной настройки (например, пустой `shodan_key`)
+полностью исключается из списка в начале сканирования и не учитывается в
+прогрессе.
+
+Если сканирование остановлено или истёк лимит времени, работающие источники
+останавливаются в ближайшей точке проверки. Результат считается **неполным**:
+он сохраняется (кроме сканирований мониторинга), но мониторинг не сравнивает
+его как «исчезнувшие объекты».
 
 ---
 
-## Data sources
+## Источники данных
 
-### Passive — no packets reach the target (always run)
+### Пассивные — не отправляют цели ни одного пакета (работают всегда)
 
-| Source            | What it finds                                               | Key required            |
-| ----------------- | ----------------------------------------------------------- | ----------------------- |
-| **DNS**           | A/AAAA/MX/NS/TXT/CNAME records + reverse DNS                | –                       |
-| **RDAP / WHOIS**  | Registration data via RDAP (modern WHOIS)                   | –                       |
-| **crt.sh**        | Subdomains from Certificate Transparency logs               | –                       |
-| **ASN (Cymru)**   | IP → Autonomous System + routed BGP prefix (Team Cymru DNS) | –                       |
-| **Wayback**       | Historical URLs/endpoints from the Internet Archive         | –                       |
-| **OTX**           | Passive-DNS hostnames & IPs (AlienVault OTX)                | –                       |
-| **Brute-force**   | Common subdomains via a bundled 5000-entry wordlist         | –                       |
-| **Reverse-IP**    | Other domains & subdomains on the same IP                   | SecurityTrails / VT     |
-| **Shodan**        | Open ports, service banners, extra hostnames                | Shodan                  |
-| **Censys**        | Host services with product/version + DNS names              | Censys (ID + secret)    |
-| **GitHub**        | Public code mentioning the target (leaked configs/keys)     | GitHub token            |
+| Источник           | Что находит                                                  | Нужен ключ              |
+| ------------------ | ------------------------------------------------------------ | ----------------------- |
+| **DNS**            | Записи A/AAAA/MX/NS/TXT/CNAME + обратный DNS                 | –                       |
+| **RDAP / WHOIS**   | Регистрационные данные (современный WHOIS)                   | –                       |
+| **crt.sh**         | Поддомены из журналов Certificate Transparency (CT)          | –                       |
+| **ASN (Cymru)**    | IP → автономная система + префикс BGP (DNS Team Cymru)       | –                       |
+| **Wayback**        | Исторические URL/эндпоинты из Internet Archive (с фильтрацией, по HTTPS) | –           |
+| **OTX**            | Хосты и IP из пассивного DNS (AlienVault OTX) — IP **исторические**, в активное сканирование не попадают | – |
+| **Перебор поддоменов** | Распространённые поддомены по встроенному словарю на 5000 слов | –                    |
+| **Параметры**      | Параметры запроса из всех URL с разбивкой на кандидатов SQLi/XSS/redirect/LFI/SSRF/IDOR | – |
+| **Reverse-IP**     | Другие домены и поддомены на том же IP                       | SecurityTrails / VT     |
+| **Shodan**         | Открытые порты, баннеры, дополнительные хосты                | Shodan                  |
+| **Censys**         | Данные о сертификатах и хостах (Censys Search v2)            | Censys ID + secret      |
+| **GitHub**         | Открытый код, упоминающий цель (утёкшие конфиги/ключи)       | Токен GitHub            |
+| **CVE**            | Уязвимости, соответствующие найденным версиям сервисов (см. ниже) | – *(ключ NVD необязателен)* |
 
-> ASN uses Team Cymru's DNS service specifically to avoid leaking target IPs in
-> a cleartext HTTP request to a third party. Keyless sources work out of the
-> box; keyed sources are simply skipped when their key is absent.
+> Для ASN используется **DNS**-сервис Team Cymru — так IP цели не раскрывается
+> третьей стороне в открытом HTTP-запросе. Источники без ключей работают сразу;
+> те, что требуют ключ, без него молча пропускаются.
+>
+> **Reverse-IP, Shodan и Censys** запрашиваются только для **собственных IP
+> цели** (см. [правило области](#модель-безопасности) ниже). Серверы MX/NS
+> домена (например, почта Google, DNS Cloudflare) принадлежат другим
+> организациям — запросы по ним расходовали бы квоту API и заполняли граф
+> чужими доменами.
+>
+> Ответ **crt.sh** читается потоком: даже если на очень больших доменах ответ
+> обрывается на лимите в 64 МБ, уже прочитанные записи не теряются. Если crt.sh
+> временно возвращает ошибку (404/429/5xx — бесплатный сервис часто перегружен),
+> делаются повторные попытки через 2 и 5 секунд. Превышение лимита запросов OTX
+> (429) показывается как предупреждение, а не ошибка. Запросы ASN выполняются
+> параллельно (на реальной цели с 16 IP: ~35 с → ~7 с).
 
-### Active — requires authorization (consent)
+### Активные — требуют согласия (consent)
 
-| Source                | What it does                                                             | Needs                 |
+| Источник              | Что делает                                                              | Нужно                 |
 | --------------------- | ----------------------------------------------------------------------- | --------------------- |
-| **nmap**              | Service/version detection; maps ports, services & CPEs                   | `nmap` on PATH        |
-| **Port scan**         | Pure-Go fallback scanner with banner grabbing                           | –                     |
-| **HTTP probe**        | Live URL, status, page title, detected technologies                     | –                     |
-| **TLS checks**        | Flags TLS 1.0/1.1 and expired / soon-expiring certificates              | –                     |
-| **robots / sitemap**  | Harvests server-declared paths (zero false positives)                   | –                     |
-| **Content fuzzing**   | Path/content discovery with bundled SecLists, soft-404 aware            | –                     |
-| **Web checks**        | CORS misconfig, exposed `.git`/`.env`, directory listing, risky methods | –                     |
-| **Takeover**          | Subdomain-takeover detection via dangling-CNAME fingerprints            | –                     |
-| **Favicon hash**      | Shodan-style MurmurHash3 favicon hash                                   | –                     |
-| **nuclei**            | Runs ProjectDiscovery nuclei templates against live hosts               | `nuclei` on PATH      |
-| **Screenshots**       | Headless-browser screenshots of live web hosts                          | Chromium on PATH      |
-| **Zone transfer**     | Attempts AXFR against the domain's name servers                         | toggle                |
-| **HIBP**              | Checks harvested emails against Have I Been Pwned breaches               | HIBP key              |
+| **nmap**              | Определение сервисов/версий; порты, сервисы и CPE. IPv4 и IPv6 запускаются отдельно (`-6`) | `nmap` в PATH |
+| **Сканер портов**     | Резервный сканер на чистом Go (со снятием баннеров) — только если нет nmap | –                  |
+| **HTTP probe**        | Живые URL, статус, заголовки, обнаруженные технологии, email-адреса     | –                     |
+| **HTTP ports**        | Веб-сервисы на нестандартных портах, найденных nmap/сканером портов    | –                     |
+| **Проверки TLS**      | TLS 1.0/1.1 и просроченные/скоро истекающие сертификаты (и на нестандартных HTTPS-портах) | – |
+| **robots / sitemap**  | Пути, объявленные сервером (без ложных срабатываний, до 100 на хост); sitemap на чужих доменах пропускаются | – |
+| **Фаззинг контента**  | Поиск путей/контента по встроенным SecLists (с умной обработкой soft-404) | –                    |
+| **Веб-проверки**      | Ошибки CORS, открытые `.git`/`.env`, листинг каталогов, опасные методы  | –                     |
+| **Встроенные проверки** | Проверка по шаблонам **внутри программы** на открытые панели/файлы    | – *(встроено)*        |
+| **Анализ JS**         | Извлечение эндпоинтов и утёкших секретов из JS-файлов сайта             | –                     |
+| **CDN / WAF**         | Cloudflare, Akamai, Fastly, CloudFront, Sucuri, Azure Front Door, AWS ELB | – *(внутри HTTP probe)* |
+| **Хэш favicon**       | Хэш favicon MurmurHash3 в стиле Shodan                                  | – *(внутри HTTP probe)* |
+| **Takeover**          | Обнаружение возможного захвата поддомена через невостребованный CNAME   | –                     |
+| **Скриншоты**         | Скриншоты живых веб-хостов — **внутри программы**                       | Chromium/Firefox      |
+| **Перенос зоны**      | Попытка AXFR к серверам имён домена                                     | переключатель         |
+| **HIBP**              | Проверка email-адресов, собранных HTTP probe, по базе «Have I Been Pwned» | Ключ HIBP           |
+| **nuclei** *(необязательно)* | Шаблоны ProjectDiscovery nuclei, если он установлен в системе    | `nuclei` в PATH + переключатель |
 
-Bundled wordlists (SecLists subsets) are **embedded in the binary**, so content
-fuzzing and brute-forcing work with no extra downloads. Web checks verify
-response content before reporting, keeping findings high-confidence.
+Встроенные словари (части SecLists) **вшиты в бинарник**, поэтому фаззинг и
+перебор работают без каких-либо дополнительных загрузок.
 
----
+### Что ищут активные проверки
 
-## CVE engine
-
-`internal/cve` turns discovered software into a prioritized vulnerability list:
-
-1. **Match** — service/technology versions (from nmap, Shodan, Censys, HTTP
-   fingerprinting) are converted to CPE and queried against the **NVD 2.0 API**;
-   keyword fallback handles products without a clean CPE.
-2. **Cache** — every query is cached in a local **SQLite** database (pure-Go
-   driver — no cgo, no system SQLite needed) with a freshness TTL, so repeat
-   scans are fast and respectful of NVD's rate limits.
-3. **Enrich & prioritize** — each CVE is annotated with:
-   - **CISA KEV** — is it a *known-exploited* vulnerability?
-   - **FIRST EPSS** — the probability it will be exploited in the next 30 days.
-   - **CVSS** severity.
-
-   The most severe matches are kept per service to keep the graph readable.
-
-An NVD API key is optional — it only raises the request rate limit.
-
----
-
-## Reports & exports
-
-From the GUI's export menu or the CLI's output flags:
-
-| Format       | Best for                                                    |
-| ------------ | ---------------------------------------------------------- |
-| **JSON**     | Machine processing / piping into other tools               |
-| **HTML**     | A standalone, styled report you can hand to a stakeholder  |
-| **Markdown** | Wiki pages, tickets, pull-request write-ups                |
-| **CSV**      | Findings + CVEs in a spreadsheet                           |
-| **SARIF**    | CI / code-scanning dashboards (SARIF 2.1.0)                |
-| **Obsidian** | A full vault: one cross-linked note per node (`[[wikilinks]]`) |
-
-The Obsidian export reproduces the same relationships as the in-app graph, so
-you can explore findings in Obsidian's own graph view.
+- **Веб-проверки** — CORS (если чужой `Origin` отражается и разрешены
+  credentials — `high`; если только отражается или `*` приходит вместе с
+  credentials — `medium`), открытый `/.git/HEAD`, открытый `/.env`, листинг
+  каталога (`Index of /`), опасные HTTP-методы, включённые через `OPTIONS`.
+- **DNS (пассивно)** — SPF и DMARC. SPF требуется только для имён, которые
+  работают с почтой (основной домен или имя с записью MX). Если у поддомена нет
+  своей записи DMARC, по RFC 7489 учитывается политика основного домена. Если
+  DNS-запрос завершился ошибкой (таймаут, SERVFAIL), ложная находка «записи
+  нет» не создаётся.
+- **Анализ JS** — ключ доступа AWS, ключ Google API, токен Slack, токен GitHub,
+  живой секретный ключ Stripe, блоки приватных ключей и JWT.
+- **Takeover** — если CNAME указывает на один из следующих сервисов, а в ответе
+  есть признак «невостребованного ресурса»: GitHub Pages, Heroku, AWS S3,
+  Shopify, Fastly, Pantheon, Tumblr, Zendesk, Read the Docs, Surge.sh,
+  Bitbucket.
+- **Параметры** — классифицируются по имени: `sqli`, `xss`, `redirect`,
+  `lfi/path`, `ssrf`, `idor`. Это **кандидат**, а не подтверждённая уязвимость —
+  нужна ручная проверка.
+- **CDN / WAF** — если хост находится за CDN, просканированный IP — это
+  **пограничный (edge)** сервер, а не исходный. Находки по портам и хостам
+  описывают CDN.
+- **Редиректы** — HTTP-запросы следуют перенаправлениям между хостами в области
+  (до 5). Перенаправлениям на хосты вне области **не следуют**: записывается сам
+  ответ 3xx и его адрес `location`.
+- **Фаззинг** — одновременно проверяется до 4 хостов; ограничение скорости
+  (`rate_limit_per_host`) действует для каждого хоста отдельно.
 
 ---
 
-## Continuous monitoring (diffing)
+## Граф: типы узлов
 
-Every scan is saved as a per-target snapshot. Re-scan later and osint-forge
-diffs against the previous run, reporting exactly **what changed** — new
-subdomains, newly opened ports, freshly matched CVEs, or assets that
-disappeared. This turns a one-off recon tool into a lightweight attack-surface
-monitor. In the CLI, add `-diff`; in the GUI it's a button.
+У каждого узла детерминированный ID (`<тип>:<ключ>`, например
+`domain:example.com`, `ip:1.2.3.4`), поэтому объект, найденный разными
+источниками, сливается в один узел, а его свойства дополняются.
+
+В интерфейсе типы показываются по-русски (столбец «В интерфейсе»).
+
+| Тип           | В интерфейсе  | Значение                                                    |
+| ------------- | ------------- | ----------------------------------------------------------- |
+| `domain`      | домен         | Основной домен (корень сканирования)                        |
+| `subdomain`   | поддомен      | Найденный поддомен                                          |
+| `ip`          | IP            | Адрес IPv4/IPv6                                             |
+| `port`        | порт          | Открытый порт                                               |
+| `service`     | сервис        | Сервис за портом и его версия                               |
+| `technology`  | технология    | Обнаруженная технология (сервер, фреймворк, CMS…)           |
+| `certificate` | сертификат    | TLS-сертификат                                              |
+| `asn`         | ASN           | Автономная система / префикс BGP                            |
+| `whois_org`   | организация   | Организация-регистрант                                      |
+| `url`         | URL           | Живой URL или эндпоинт                                      |
+| `email`       | email         | Найденный email-адрес                                       |
+| `cve`         | CVE           | Известная уязвимость                                        |
+| `finding`     | находка       | Находка безопасности (ошибка конфигурации, открытый ресурс) |
+| `param`       | параметр      | Параметр запроса URL для проверки                           |
+| `bucket`      | бакет         | Облачный бакет (S3/GCS/Azure) — *пока ни один источник их не создаёт, [см. ниже](#известные-ограничения-и-незавершённые-работы)* |
+
+Между двумя узлами хранится только **одна** направленная связь (edge) —
+остаётся название первого найденного отношения. Это предотвращает толстые
+«веера» линий на графе.
 
 ---
 
-## CLI usage
+## Встроенные возможности
 
-The headless `reconcli` shares the full engine and needs only a Go toolchain to
-build (no GUI dependencies):
+Следующие три возможности **включены по умолчанию** и **ничего не требуют
+устанавливать** — этим они отличаются от внешних программ:
+
+- **Встроенные проверки (по шаблонам)** — находят открытые Spring Actuator,
+  phpinfo, Adminer, дампы SQL, Swagger/OpenAPI, Go pprof, `.DS_Store`, WordPress
+  и подобные раскрытые ресурсы. Шаблоны (`.json`) вшиты в бинарник; движок
+  работает с минимальным сопоставителем в стиле nuclei (статус/слово/regex).
+  Все проверки **только читают** (GET) и ничего не ломают. **Защита от
+  soft-404:** каждый хост сначала калибруется случайными несуществующими путями.
+  На сайтах, которые возвращают 200 на любой путь (или отражают запрошенный
+  путь на странице), «находка» шаблона отбрасывается, если она похожа на
+  калибровочную страницу.
+- **Скриншоты** — снимки живых веб-хостов с помощью установленного в системе
+  **Chromium или Firefox** (до 3 одновременно). Отдельно ставить браузер не
+  нужно; если ни один не найден, этап молча пропускается. Порядок поиска:
+  сначала семейство Chromium (`chromium`, `chromium-browser`, `google-chrome`,
+  `google-chrome-stable`, `chrome`, `chrome-headless-shell`, `brave-browser`),
+  затем семейство Firefox (`firefox`, `firefox-esr`, `librewolf`). Даже если
+  Firefox уже открыт, используется отдельный экземпляр. Chromium запускается
+  **с песочницей** (сайт цели может быть вредоносным); `--no-sandbox`
+  добавляется, только когда программа работает от root. Снимок сначала
+  пишется во временный файл — неудачная попытка не портит снимок прошлого
+  сканирования. Скриншоты можно делать и **по запросу** из панели подробностей
+  (см. ниже). Для одной страницы одновременно делается только один снимок (если
+  сканирование и панель запросили одну страницу, результат общий), а во всей
+  программе одновременно снимается не более **4** страниц.
+
+### Быстрые скриншоты: постоянный Firefox (WebDriver BiDi)
+
+Если есть Firefox, скриншоты делаются через **один постоянный headless
+Firefox**. Он управляется встроенным в Firefox протоколом WebDriver BiDi,
+ничего дополнительно не устанавливается. Каждая страница — новая вкладка в этом
+браузере, без перезапуска всего браузера.
+
+- **Правило ожидания страницы:** если страница полностью загрузилась (`load`),
+  снимок делается сразу. Если какой-то ресурс зависает (трекер, мёртвый CDN,
+  закрытый порт), через **3 секунды** после готовности DOM снимается то, что
+  уже нарисовано. Если за 15 секунд не появился даже DOM, страница считается
+  «не ответившей».
+- Сайты с **самоподписанным / неверным сертификатом** тоже снимаются (частый
+  случай среди целей разведки).
+- Собственная страница ошибки Firefox (DNS не найден, соединение отклонено,
+  ошибка TLS) не сохраняется как скриншот — в этом случае возвращается понятная
+  ошибка.
+- Браузер запускается при первом запросе (~1–1,5 с), закрывается после
+  **3 минут** простоя, при падении автоматически перезапускается и закрывается
+  вместе с сервером.
+- Если BiDi не работает (например, очень старый Firefox), в качестве резерва
+  используется прежний разовый способ `firefox --screenshot`.
+
+Замеры (Firefox на этом компьютере, локальные страницы):
+
+| Ситуация | Прежний способ (каждый раз новый браузер) | Сейчас |
+| -------- | ----------------------------------------- | ------ |
+| Обычная страница (браузер уже запущен) | 0,6–3 с | **~0,3 с** |
+| Страница с одним зависшим ресурсом | 30–40 с, **снимка нет** | **~3 с, снимок есть** |
+| Страница с медленной (8 с) картинкой | ~8,6 с | ~3 с |
+| Сайт с самоподписанным TLS | страница ошибки браузера | **~0,25 с, настоящая страница** |
+| 6 страниц параллельно | 6 отдельных браузеров | **~0,6 с суммарно, один браузер** |
+
+Для Chromium остаётся разовый способ, но с жёстким лимитом 10 секунд
+(`--timeout`): зависший ресурс не блокирует снимок.
+
+- **Хэш favicon** — хэш mmh3 в стиле Shodan, вычисляемый на чистом Go (с этим
+  хэшем в Shodan через `http.favicon.hash:<hash>` можно найти другие хосты с
+  тем же favicon).
+
+Если в системе установлен настоящий внешний `nuclei`, он тоже работает
+**дополнительно** (необязательно, по умолчанию выключен) — то есть добавляет
+полный набор шаблонов ProjectDiscovery поверх встроенных проверок.
+
+### Список встроенных шаблонов
+
+| ID                     | Серьёзность | Путь              | Что находит                         |
+| ---------------------- | ----------- | ----------------- | ----------------------------------- |
+| `spring-actuator-env`  | high        | `/actuator/env`   | Переменные окружения Spring Boot    |
+| `adminer`              | high        | `/adminer.php`    | Панель БД Adminer                   |
+| `env-backup`           | high        | `/.env.bak`       | Резервная копия конфига             |
+| `sql-dump`             | high        | `/dump.sql`       | Дамп SQL                            |
+| `spring-actuator`      | medium      | `/actuator`       | Spring Boot Actuator                |
+| `apache-server-status` | medium      | `/server-status`  | Apache `mod_status`                 |
+| `phpinfo`              | medium      | `/phpinfo.php`    | Страница `phpinfo()`                |
+| `go-pprof`             | medium      | `/debug/pprof/`   | Отладочный эндпоинт Go pprof        |
+| `ds-store`             | low         | `/.DS_Store`      | Файл macOS `.DS_Store`              |
+| `swagger-api-docs`     | info        | `/swagger.json`   | Документация Swagger/OpenAPI        |
+| `graphql-endpoint`     | info        | `/graphql`        | Эндпоинт GraphQL                    |
+| `wordpress-login`      | info        | `/wp-login.php`   | WordPress                           |
+
+### Добавление собственного шаблона
+
+Шаблоны берутся из файлов `.json` в папке `internal/scan/checks/` (в файле
+может быть массив или один объект). Каждый шаблон отправляет живому веб-хосту
+**один GET-запрос** и создаёт находку, если сопоставители сработали:
+
+```json
+[
+  {
+    "id": "spring-actuator-env",
+    "name": "Открыт Spring Boot Actuator /env",
+    "severity": "high",
+    "path": "/actuator/env",
+    "desc": "Эндпоинт Spring Boot /actuator/env открыт — раскрываются переменные окружения, конфигурация, а иногда и секреты.",
+    "matchers": [
+      { "type": "status", "status": [200] },
+      { "type": "word", "words": ["propertySources", "systemEnvironment"], "condition": "or", "part": "body" }
+    ]
+  }
+]
+```
+
+| Поле                   | Значение                                                          |
+| ---------------------- | ----------------------------------------------------------------- |
+| `id`, `name`, `desc`   | Идентификатор, заголовок и описание находки                       |
+| `severity`             | `info`, `low`, `medium` или `high`                                |
+| `path`                 | Путь, по которому отправляется запрос                             |
+| `condition`            | **Между** сопоставителями: `and` (по умолчанию) или `or`          |
+| `matchers[].type`      | `status`, `word` или `regex`                                      |
+| `matchers[].status` / `words` / `regex` | Проверяемые значения                             |
+| `matchers[].part`      | `body` (по умолчанию) или `header`                                |
+| `matchers[].condition` | **Внутри** одного сопоставителя: `or` (по умолчанию) или `and`    |
+| `matchers[].negative`  | `true` — инвертирует результат                                    |
+
+Шаблоны вшиваются в бинарник через `go:embed`, поэтому после добавления нового
+файла нужна **пересборка** (`make web`). Добавляйте только читающие и
+безвредные проверки.
+
+---
+
+## Веб-интерфейс
+
+Интерфейс построен для реальной работы пентестера:
+
+- **Три вида** — переключение с графа на **таблицу** (с сортировкой и поиском)
+  и **галерею скриншотов**. Поле поиска над графом скрывает неподходящие узлы и
+  подсвечивает подходящие.
+- **Узлы не налезают друг на друга** — каким бы большим ни был граф, каждый
+  узел и его подпись стоят отдельно. Раскладка считается в отдельном потоке
+  (Web Worker), поэтому страница не зависает:
+  1. «Листовые» узлы с единственным соседом (CVE, пути фаззинга, параметры,
+     неразрешённые имена…) располагаются **концентрическими кольцами** вокруг
+     родителя с учётом ширины подписей.
+  2. Оставшееся «ядро» графа раскладывается **fCoSE**: сначала спектральный
+     метод находит глобальную структуру, затем силы её уточняют. Каждый узел
+     заранее резервирует место под своё кольцо.
+  3. В конце узлы **вместе с подписями** рассматриваются как прямоугольники, и
+     пересекающиеся расталкиваются вдоль линии центров.
+
+  Замер: на синтетическом графе из 3671 узла пар перекрывающихся узлов
+  3037 → **0**, подписей 5879 → **0**; на 631 узле 41/92 → **0/0**. Большой граф
+  раскладывается за ~20–30 секунд. В это время в нижней панели видно
+  «🧭 Раскладка графа…», и с интерфейсом можно работать. Если граф большой,
+  приблизьте его (zoom) — при мелком масштабе подписи скрываются. Кнопка «↻»
+  раскладывает граф заново с нуля. Во время сканирования граф обновляется
+  постепенно, сохраняя текущую раскладку. После завершения сканирования весь
+  граф один раз раскладывается с нуля.
+- **Цвета по коду статуса** — каждый узел, ответивший по HTTP, окрашивается по
+  коду статуса: **2xx** зелёный · **3xx** синий · **401/403** фиолетовый ·
+  **4xx** жёлтый · **5xx** красный. Кликабельная «легенда» в углу подсвечивает
+  каждый класс. `401/403` и `5xx` — обычно самые интересные места.
+- **Панель подробностей** — двойной клик по узлу (или выбор в таблице)
+  показывает все его свойства. Для URL-узлов страницу можно запросить прямо
+  здесь и посмотреть статус, заголовки и сырой HTML.
+- **Скриншот страницы в панели** — под кнопками «🌐 Открыть в браузере» и
+  «📄 Показать HTML» находится скриншот этой страницы. Клик по снимку открывает
+  его в полном размере; «🔄 Обновить» снимает страницу заново.
+  - Если снимок уже сохранён, он показывается сразу (запрос к цели не уходит).
+  - Если снимка нет, а сканирование уже обращалось к этой странице (URL со
+    статусом), скриншот делается **автоматически** (в Firefox обычно меньше
+    секунды, на странице с зависшим ресурсом ~3 секунды).
+  - Страницы, к которым сканирование никогда не обращалось (найденные в архиве
+    Wayback, sitemap, JS), автоматически не открываются — чтобы пассивное
+    сканирование оставалось пассивным. Для них появляется кнопка «📸 Сделать
+    скриншот». То же самое, если скриншоты отключены в настройках.
+  - Для узлов хостов, портов и находок показывается скриншот связанной с ними
+    страницы.
+  - Полученный снимок записывается и в граф, поэтому виден в галерее и в других
+    открытых вкладках.
+- **Теги и заметки** — любой узел можно пометить как **Уязвимо / Проверено /
+  Интересно / Ложное** (ложное срабатывание) и добавить текстовую заметку. Тег
+  окрашивает обводку узла; всё сохраняется по цели и попадает в отчёты.
+  Заметка всегда записывается для **цели графа на экране** — даже если в поле
+  ввода вы уже написали другое имя.
+- **Остановка** — после нажатия «Остановить» кнопка остаётся в состоянии
+  «Остановка…», пока сервер действительно не завершит сканирование. После этого
+  можно сразу начать новое.
+- **Обучающий режим «Следующий шаг»** — для каждого узла: *почему это важно*,
+  *что проверить вручную*, *какими инструментами*. По замыслу подталкивает
+  проверять только в пределах scope.
+- **История сканирований и визуальное сравнение** — каждое завершённое
+  сканирование сохраняется автоматически. Старое сканирование можно открыть
+  снова или сравнить два сканирования: новые узлы видны с зелёной обводкой,
+  исчезнувшие — с красной пунктирной.
+- **Непрерывный мониторинг** — наблюдение за целью с заданным интервалом; при
+  появлении нового поддомена, порта или находки приходит уведомление в
+  **Telegram** или на **вебхук**.
+- **Панель источников** — сколько времени занял каждый источник текущего
+  сканирования, его состояние (`running` / `done` / `error`) и сколько
+  узлов/связей он нашёл; источники сгруппированы по этапам.
+
+---
+
+## Движок CVE
+
+Обнаруженные сервисы и версии (nmap `-sV`, Shodan/Censys или веб-заголовки)
+сопоставляются с известными уязвимостями:
+
+- **NVD (National Vulnerability Database)** — находит CVE для версии сервиса
+  по CPE. Ключ NVD (необязательно) повышает лимит запросов; без ключа запросы
+  замедляются в соответствии с лимитом NVD.
+- **CISA KEV** — активно эксплуатируемые CVE помечаются ярко-красной обводкой
+  (высший приоритет).
+- **EPSS** (FIRST.org) — вероятность эксплуатации каждой CVE в ближайшие
+  30 дней, в процентах.
+- **Локальный кэш** — результаты кэшируются в базе SQLite на чистом Go
+  (`~/.cache/osint-forge/cve.sqlite`): результаты NVD считаются свежими
+  **7 дней**, список KEV — **24 часа**. Поэтому повторные сканирования быстрее и
+  меньше упираются в лимит NVD. База открывается в режиме WAL с таймаутом
+  ожидания (busy timeout), поэтому веб-сервер и `reconcli` могут без ошибок
+  работать с ней одновременно.
+- **CVE от Shodan** — CVE, о которых Shodan сообщает напрямую, тоже обогащаются
+  признаком KEV и оценкой EPSS.
+
+Если сведений о сервисе слишком мало (например, версия не определена),
+сопоставление пропускается, чтобы не заполнять граф ложными совпадениями.
+
+В итоге вы видите не просто список, а «какая CVE требует внимания в первую
+очередь» — по серьёзности + KEV + EPSS.
+
+---
+
+## Отчёты и экспорт
+
+Из меню «Экспорт» (или флагами в CLI) — в шести форматах. Все отчёты на русском:
+
+| Формат        | Для чего                                                        |
+| ------------- | --------------------------------------------------------------- |
+| **HTML**      | Самостоятельный красивый отчёт — открыть и показать в браузере. |
+| **Markdown**  | Текстовый отчёт для Obsidian/Notion или Git-репозитория.        |
+| **CSV**       | Таблица находок + CVE — для Excel/скриптов.                     |
+| **SARIF 2.1.0** | Для CI и панелей сканирования кода (GitHub Code Scanning). У каждого результата есть расположение (затронутый URL/хост); каждый тип находки — отдельное правило; CVE получают `security-severity` по CVSS. |
+| **JSON**      | Полный граф — для передачи в другие инструменты.                |
+| **Хранилище Obsidian (.zip)** | Каждый узел — отдельная, связанная с другими заметка. |
+
+Ваши **теги и заметки** тоже попадают в отчёты HTML, Markdown, JSON, CSV и
+Obsidian — то есть отчёт включает и ваш ручной анализ.
+
+Экспорт всегда делается из **текущего** графа. Чтобы получить отчёт по старому
+сканированию, сначала откройте его из истории. В отчётах CLI тегов и заметок
+нет — они добавляются только в экспорт из веб-интерфейса. HTML-отчёт делает
+кликабельными только ссылки `http(s)`.
+
+---
+
+## Непрерывный мониторинг
+
+В панели 🔔 вы добавляете цель под наблюдение и выбираете интервал (**5 минут,
+1 час, 6 часов, 12 часов или 1 день**). Программа в фоне пересканирует цель и
+сравнивает результат с предыдущим. **Если есть изменения** (новый
+поддомен/порт/находка или что-то исчезло) — отправляет короткое сообщение в
+Telegram или на вебхук:
+
+```
+🕸️ osint-forge — изменения на example.com
++2 новых, −1 исчезло
+➕ subdomain: new.example.com
+➕ port: 8080/tcp
+➖ url: http://example.com/old
+```
+
+Настройка: Настройки → раздел «Уведомления (мониторинг)» — введите токен
+Telegram-бота и ID чата (или URL вебхука). Проверьте кнопкой «✈ Тестовое
+сообщение».
+
+### Фильтр уведомлений
+
+Для каждого наблюдения вы выбираете, **какие изменения вызывают уведомление**
+(поле «Уведомлять»). Так Telegram не засыпается неважными изменениями вроде
+новых архивных URL или технологий:
+
+| Вариант | О чём приходит уведомление |
+| ------- | -------------------------- |
+| **Важные изменения** *(по умолчанию)* | Новые/исчезнувшие поддомены, IP, открытые порты, сервисы, сертификаты, CVE и находки. «Шум» вроде URL, параметров, технологий и email не учитывается. |
+| **Только опасное** | Только находки и CVE уровня **high/critical** (CVE из CISA KEV всегда считается critical) и новые открытые порты; только новые. |
+| **Все изменения** | Любые изменения в графе (прежнее поведение). |
+| **Выбрать вручную…** | Отмечаете типы (поддомены, IP, порты, сервисы, находки, CVE, сертификаты, URL, параметры, технологии, email, ASN/WHOIS), выбираете **минимальную серьёзность** для находок/CVE и при желании получаете уведомления **только о новых**. |
+
+- В списке под каждым наблюдением кратко показан его фильтр (🔎). Кнопка
+  **✏️** возвращает наблюдение в форму: измените интервал и фильтр и нажмите
+  «Сохранить» — это наблюдение обновится (дубль не создаётся).
+- Если изменения есть, но ни одно не проходит фильтр, уведомление не
+  отправляется. В панели пишется «есть изменения (+N / −M), но они не проходят
+  фильтр».
+- В уведомлении считаются и показываются только изменения, прошедшие фильтр.
+- Старые наблюдения, созданные без фильтра, как и раньше сообщают обо всех
+  изменениях.
+
+Telegram-бот: создайте бота через [@BotFather](https://t.me/BotFather), ID
+чата выдаст [@userinfobot](https://t.me/userinfobot).
+
+**Как это работает:**
+
+- Наблюдения сохраняются в `~/.config/osint-forge/monitor.json` и
+  восстанавливаются после перезапуска сервера.
+- Планировщик проверяет раз в минуту. Первое сканирование мониторинга
+  начинается **через один интервал** после добавления наблюдения. Через API
+  можно задать любой интервал, но не меньше 5 минут.
+- Одновременно одно сканирование: если идёт другое, очередное наблюдение
+  повторяется в следующую минуту (расписание не сдвигается на интервал).
+- Если при добавлении отмечено согласие, мониторинг выполняет **активное**
+  сканирование; иначе работают только пассивные источники.
+- Новое сканирование сравнивается с **последним** сканированием цели в истории
+  (ручные сканирования тоже учитываются). Если изменений нет, уведомление не
+  отправляется — в панели пишется «без изменений».
+- Остановленное или не уложившееся в лимит времени сканирование мониторинга
+  **не сохраняется и не сравнивается** — иначе всё, что оно не успело увидеть,
+  «исчезло» бы, и ушло бы ложное уведомление. В панели пишется «сканирование не
+  завершилось полностью».
+- В уведомлении до 15 новых и всего до 25 строк (в Telegram сообщение длиннее
+  4000 символов обрезается).
+- Если уведомление не отправилось, причина видна в панели (с пояснением
+  Telegram, например «chat not found»). Токен бота и путь вебхука никогда не
+  показываются в текстах ошибок.
+- **Формат вебхука:** запрос `POST`, `Content-Type: application/json`, тело
+  `{"text": "…сообщение…"}`. Это напрямую совместимо с «incoming webhook»
+  Slack и Mattermost. Discord ожидает поле `content`, поэтому для него нужен
+  промежуточный адаптер.
+
+**Важно знать:** сканирование мониторинга работает как обычное — во всех
+открытых вкладках оно **заменяет текущий граф** (на экране появляется короткое
+сообщение «Запущено сканирование мониторинга»).
+
+---
+
+## Модель безопасности
+
+osint-forge построен по принципу «fail-safe» (при ошибке — в безопасную
+сторону):
+
+- **Защита области (`scope_strict`, включена по умолчанию)** — активные запросы
+  касаются только основного домена цели, его поддоменов и **собственных IP
+  цели** (правило ниже). Чужие хосты, появившиеся из reverse-IP, общего
+  хостинга, SAN сертификатов, записей MX/NS, **никогда** не сканируются
+  активно — они принадлежат другим организациям. Дополнительные домены/CIDR
+  можно добавить через `extra_scope`. Область применяется и к HTTP-редиректам.
+- **Барьер согласия (consent)** — весь набор активных источников не запускается
+  вовсе, пока вы не подтвердите авторизацию (галочка в интерфейсе, `-active` в
+  CLI).
+- **Проверка цели** — некорректная цель (`!!!`, слово без TLD, сломанный домен)
+  отклоняется, бессмысленное сканирование не запускается.
+- **Лимит сканирования (`scan_timeout_min`)** — общий жёсткий лимит времени;
+  сканирование никогда не работает бесконечно.
+- **Скорость запросов (`rate_limit_per_host`)** — ограничивает число запросов в
+  секунду на хост при фаззинге/переборе (по умолчанию 40), чтобы это не было
+  похоже на DoS.
+- **Защита от CSRF** — API отклоняет кросс-доменные/межсайтовые запросы (по
+  заголовкам `Origin` и `Sec-Fetch-Site`); открытый в браузере чужой сайт не
+  может управлять сервером. Ответы отправляются с `X-Frame-Options: DENY` и
+  `X-Content-Type-Options: nosniff`.
+- **Защита путей к файлам** — эндпоинт скриншотов отдаёт только файлы из папки
+  скриншотов, ID истории проверяются на то, что состоят только из цифр
+  (path traversal невозможен).
+- **Секретные данные** — `config.json` (ключи API), заметки и `monitor.json`
+  записываются атомарно с правами `0600` (читает только владелец). Ключи API в
+  URL (Shodan), токен Telegram-бота и пути вебхуков никогда не попадают в
+  сообщения об ошибках и журнал.
+- **Песочница браузера** — для скриншотов Chromium работает с включённой
+  песочницей рендерера (отключается только под root).
+- **Проверка настроек** — значения из формы очищаются и ограничиваются
+  (`max_concurrent` 1–256, отрицательные числа → 0, пустой User-Agent → по
+  умолчанию), чтобы неверное значение не открыло сотни тысяч соединений.
+- **Только локально** — по умолчанию сервер слушает только `127.0.0.1`.
+
+> **Как определяется область:**
+>
+> - **Имена хостов** — по **зарегистрированному домену** (eTLD+1). То есть если
+>   ввести `api.example.com`, активное сканирование получит разрешение на весь
+>   `*.example.com` — учитывайте это, если вам разрешён только один поддомен.
+> - **IP-адреса** — только (1) IP, который сам является целью, (2) IP внутри
+>   CIDR из `extra_scope`, или (3) IP, в который **имя из области разрешилось
+>   через живой DNS** в этом сканировании. Серверы MX/NS/CNAME домена тоже
+>   разрешаются и видны на графе, но поскольку это не имена из области, их IP
+>   активно не сканируются. **Исторические** IP из пассивного DNS (OTX) тоже не
+>   сканируются — сейчас это может быть чужой сервер. В журнале nmap/сканера
+>   портов пишется «N IP вне области».
+
+> **Внимание:** при запуске с `-addr 0.0.0.0:8081` сервер открывается в сеть, и
+> **авторизации нет** — любой в сети сможет запускать сканирования от вашего
+> имени и читать ваши ключи API. Делайте так только в доверенной изолированной
+> сети.
+
+---
+
+## Настройки и ключи API
+
+Настройки редактируются в панели ⚙ интерфейса или прямо в файле `config.json`
+на диске. Все ключи доступны в интерфейсе (дополнительная область — по одной
+записи в строке; свой словарь — через вариант «Свой файл…»). При сохранении
+значения очищаются и ограничиваются.
+
+| Ключ                       | По умолчанию                | Значение                                         |
+| -------------------------- | --------------------------- | ------------------------------------------------ |
+| `nmap_args`                | `-sV -T4 --top-ports 1000`  | Дополнительные флаги nmap                        |
+| `http_user_agent`          | `osint-forge/0.1 (+recon)`  | User-Agent в HTTP-запросах                       |
+| `max_concurrent`           | `16`                        | Число параллельных воркеров (1–256)              |
+| `fuzz_enabled`             | `true`                      | Фаззинг путей                                    |
+| `fuzz_wordlist`            | `common`                    | Словарь для фаззинга (см. ниже)                  |
+| `subdomain_bruteforce`     | `true`                      | Перебор поддоменов через DNS (5000 имён)         |
+| `zone_transfer`            | `true`                      | Проверка AXFR (только в активном режиме)         |
+| `status_codes`             | `2xx,3xx,401,403,405,5xx`   | Какие коды HTTP-статуса записывать (см. ниже)    |
+| `scan_timeout_min`         | `30`                        | Лимит времени сканирования (мин., 0 = без ограничения) |
+| `scope_strict`             | `true`                      | Защита области                                   |
+| `extra_scope`              | `[]`                        | Дополнительные домены и CIDR (`10.0.0.0/8`)      |
+| `rate_limit_per_host`      | `0` (= 40 запросов/с)       | Максимум запросов в секунду на хост              |
+| `builtin_checks`           | `true`                      | Встроенные проверки по шаблонам                  |
+| `screenshots`              | `true`                      | Скриншоты                                        |
+| `favicon_hash`             | `true`                      | Хэш favicon                                      |
+| `nuclei`                   | `false`                     | Также запускать внешний nuclei                   |
+| `telegram_token` / `telegram_chat_id` / `webhook_url` | – | Уведомления мониторинга                        |
+| `nvd_key`                  | –                           | Ключ NVD API (повышает лимит CVE)                |
+| `shodan_key`               | –                           | Ключ Shodan API                                  |
+| `censys_id` / `censys_secret` | –                        | Учётные данные Censys Search v2                  |
+| `securitytrails_key` / `virustotal_key` | –              | Источники reverse-IP                             |
+| `hibp_key`                 | –                           | Ключ Have I Been Pwned                           |
+| `github_token`             | –                           | Токен для поиска по коду GitHub                  |
+
+Ключи **необязательны** — без них программа работает, просто зависящий от
+ключа источник пропускается.
+
+**Значения `fuzz_wordlist`:**
+
+| Значение             | Словарь                                                  |
+| -------------------- | -------------------------------------------------------- |
+| `common`             | SecLists `common.txt` (~4 750 путей)                     |
+| `raft-directories`   | SecLists `raft-medium-directories.txt` (~30 000 путей)   |
+| `raft-files`         | SecLists `raft-medium-files.txt` (~17 000 путей)         |
+| `combo`              | Оба словаря raft вместе, без повторов                    |
+| `/путь/словарь.txt`  | Ваш собственный файл: по одному пути в строке, строка с `#` — комментарий. Если файл не читается, используется `common`. |
+
+**Синтаксис `status_codes`:** список через запятую — точный код (`200`),
+диапазон (`200-299`) или класс (`2xx`). Пустое значение — все коды. Значение по
+умолчанию исключает ответы 404.
+
+> Если конфиг записан старой версией и в нём нет ключей новых встроенных
+> возможностей (`builtin_checks`, `screenshots`, `favicon_hash`), они не
+> выключаются — сохраняется значение по умолчанию (включено).
+
+---
+
+## Где хранятся данные
+
+Всё хранится на вашем компьютере в стандартных папках ОС (на примере Linux;
+учитываются `XDG_CONFIG_HOME` / `XDG_CACHE_HOME`):
+
+| Что                  | Путь                                                     |
+| -------------------- | -------------------------------------------------------- |
+| Настройки            | `~/.config/osint-forge/config.json`                      |
+| Теги/заметки         | `~/.config/osint-forge/notes/<цель>.json`                |
+| Наблюдения мониторинга | `~/.config/osint-forge/monitor.json`                   |
+| История сканирований | `~/.cache/osint-forge/history/<цель>/<unix-nano>.json` (+ настоящее имя цели в файле `.target`) |
+| Скриншоты            | `~/.cache/osint-forge/screenshots/`                      |
+| Кэш CVE (SQLite)     | `~/.cache/osint-forge/cve.sqlite` (+ файлы `-wal`/`-shm`) |
+
+В macOS вместо `~/.config` используется `~/Library/Application Support`,
+вместо `~/.cache` — `~/Library/Caches`; в Windows — соответственно `%AppData%`
+и `%LocalAppData%`.
+
+- **История не растёт бесконечно:** если новое сканирование состоит ровно из
+  тех же узлов, что и предыдущее, старая копия заменяется новой (поэтому
+  частый мониторинг не забивает диск). Для каждой цели хранится не более
+  **200** сканирований, самые старые удаляются автоматически. Ненужные можно
+  удалить и из панели истории; если удалить последнее сканирование цели, цель
+  пропадает из списка.
+- Просмотр истории (список, сравнение) никогда не создаёт пустых папок. Цели
+  IPv6 тоже открываются из истории под правильным именем.
+- При запуске сервера автоматически открывается последнее сканирование
+  последней просканированной цели.
+- Чтобы сбросить всё состояние, достаточно удалить указанные выше папки
+  `osint-forge`.
+
+Никакие данные не отправляются на внешние серверы (кроме источников с ключами
+API, которые вы включили, и уведомлений мониторинга).
+
+---
+
+## Командная строка (CLI)
+
+Для автоматизации и CI без графического интерфейса `reconcli` использует тот же
+движок и тот же набор источников:
 
 ```sh
-make cli        # → build/bin/reconcli
+make cli                                  # build/bin/reconcli
+
+reconcli example.com                      # только пассивный OSINT
+reconcli -active example.com              # + активное сканирование (только для разрешённых целей!)
+reconcli -active -diff example.com        # сохранить сканирование и вывести изменения
+reconcli -active -html rep.html example.com   # записать HTML-отчёт
+reconcli -obsidian ./vault example.com    # экспорт в хранилище Obsidian
+reconcli -quiet -sarif out.sarif -json out.json example.com   # для CI
 ```
+
+| Флаг              | Значение                                                   |
+| ----------------- | ---------------------------------------------------------- |
+| `-active`         | Также запустить активное сканирование (только для разрешённых целей) |
+| `-quiet`          | Не выводить каждый найденный узел                          |
+| `-timeout 30m`    | Общий лимит времени сканирования (0 = из настроек)         |
+| `-no-scope`       | Отключить защиту области (**ОПАСНО**)                      |
+| `-diff`           | Сохранить сканирование и вывести изменения относительно предыдущего |
+| `-json` / `-md` / `-csv` / `-sarif` / `-html` `ФАЙЛ` | Записать отчёт в соответствующем формате |
+| `-obsidian DIR`   | Записать хранилище Obsidian в эту папку                    |
+
+**Полезно знать:**
+
+- Флаги нужно писать **до** цели: `reconcli -active example.com` работает. Если
+  написать `reconcli example.com -active`, программа понятно объяснит ошибку и
+  завершится с кодом 2.
+- Цель проверяется так же, как в веб-интерфейсе: неверные значения вроде `foo`,
+  `!!!` отклоняются (код выхода 2).
+- Живой журнал и найденные узлы выводятся в **stderr**, итоговая сводка
+  (количество по каждому типу узлов и итог) — в **stdout**. Поэтому
+  `reconcli example.com > итог.txt` запишет в файл только чистую сводку.
+- **Ctrl+C** мягко останавливает сканирование: найденное к этому моменту
+  выводится, а запрошенные отчёты всё равно записываются (с предупреждением, что
+  результат неполный).
+- CLI читает настройки из того же `config.json`, что и веб-интерфейс.
+- CLI сохраняет сканирование в историю только с `-diff`. Такие сканирования
+  пишутся в общую папку, поэтому видны и в истории веб-интерфейса. Неполное
+  (остановленное/прерванное по времени) сканирование с `-diff` не сохраняется, а
+  программа завершается с кодом 1.
+
+---
+
+## HTTP API
+
+Веб-интерфейс построен поверх следующего JSON API (всё same-origin). Полезно,
+если вы хотите написать свой инструмент:
+
+| Метод + путь                              | Что делает                                |
+| ----------------------------------------- | ----------------------------------------- |
+| `GET /api/events`                         | Поток SSE: `scan:start/delta/log/progress/timing`, `graph:reset` |
+| `GET /api/status`                         | Идёт ли сканирование и какая цель         |
+| `GET /api/parse?target=`                  | Заранее посмотреть, как будет понята цель |
+| `POST /api/scan`                          | Запустить сканирование (`{target, consent}`) |
+| `POST /api/cancel`                        | Остановить текущее сканирование           |
+| `GET /api/snapshot`                       | Полный текущий граф                       |
+| `GET /api/diff?target=`                   | Разница двух последних сканирований цели в истории (`added` / `removed`) |
+| `GET /api/config` · `PUT /api/config`     | Прочитать / сохранить настройки           |
+| `GET /api/nmap`                           | Установлен ли `nmap` (`true` / `false`)   |
+| `GET /api/page?url=`                      | Загрузить один URL и показать статус/заголовки/HTML |
+| `GET /api/timings`                        | Время работы источников                   |
+| `GET /api/history`                        | Список просканированных целей             |
+| `GET /api/history/{target}`               | Сохранённые сканирования цели             |
+| `GET /api/history/{target}/compare?from=&to=` | Сравнить два сканирования (пустой `from` = предыдущее перед `to`, пустой `to` = самое последнее) |
+| `POST /api/history/{target}/{id}/open`    | Открыть старое сканирование               |
+| `DELETE /api/history/{target}/{id}`       | Удалить сканирование                      |
+| `GET /api/notes?target=` · `PUT /api/notes` | Прочитать / сохранить теги и заметки (`{target, node, tags, text}`) |
+| `GET /api/monitor` · `POST /api/monitor` · `DELETE /api/monitor/{target}` | Наблюдения мониторинга (`{target, intervalMin, consent, filter?, preset?}` — `filter`: `{types, minSeverity, ignoreRemoved}`, `preset`: `important`/`critical`/`all`) |
+| `POST /api/notify/test`                   | Отправить тестовое уведомление            |
+| `GET /api/export/{format}?target=`        | Скачать отчёт (`json`/`html`/`md`/`csv`/`sarif`/`obsidian`) |
+| `GET /api/screenshot?path=`               | Показать сохранённый скриншот             |
+| `POST /api/screenshot`                    | Скриншот URL-узла (`{url, force?, auto?}`): если уже сохранён — сразу, иначе снимает и возвращает → `{url, path, takenAt, cached}` |
+
+- Запросы `POST`/`PUT` требуют `Content-Type: application/json`, размер тела —
+  до 1 МиБ.
+- Ошибки возвращаются в виде `{"error": "…"}` (текст на русском).
+- Часть пути `{target}` может быть в любом виде
+  (`https://Example.com/x` → `example.com`); для цели без сохранённых
+  сканирований возвращается `404` с понятным сообщением.
+- События SSE: `scan:start` (`{target, consent, monitor}` — сканирование
+  началось, очистите граф), `scan:delta` (новые узлы/связи), `scan:log`,
+  `scan:progress` (`finished: true` — сканирование завершено), `scan:timing`,
+  `graph:reset` (граф сервера заменён — заново получите `/api/snapshot`).
+- Ключи тегов: `vuln` (Уязвимо), `checked` (Проверено), `interesting`
+  (Интересно), `fp` (Ложное срабатывание). Текст заметки — до 20 000 символов;
+  если и теги, и текст пусты, заметка удаляется.
+- `POST /api/screenshot`: новый снимок делается только для URL `http(s)` и
+  только для URL-узлов текущего графа (иначе `400`/`404`). При `auto: true`
+  сервер возвращает `409` для страницы, к которой сканирование не обращалось,
+  или если скриншоты отключены (интерфейс тогда показывает кнопку). Нет
+  браузера — `501`, истекло время — `504`.
+
+Пример — запустить пассивное сканирование из терминала и следить за живыми
+событиями:
 
 ```sh
-reconcli example.com                     # passive OSINT only
-reconcli -active example.com             # + active probing (authorized targets only)
-reconcli -active -diff example.com       # save a snapshot and print what changed
-reconcli -active -md report.md -sarif report.sarif example.com
-reconcli -active -obsidian ./vault example.com
-reconcli -timeout 15m -active example.com
-reconcli -quiet -json out.json example.com
-reconcli -no-scope -active example.com   # disable the scope guard (DANGEROUS)
+curl -s -X POST http://127.0.0.1:8081/api/scan \
+  -H 'Content-Type: application/json' \
+  -d '{"target":"example.com","consent":false}'
+
+curl -N http://127.0.0.1:8081/api/events          # поток SSE
+curl -s http://127.0.0.1:8081/api/snapshot > graph.json
 ```
 
-Flags:
-
-| Flag                 | Meaning                                                      |
-| -------------------- | ----------------------------------------------------------- |
-| `-active`            | Also run active probing (authorized targets only)           |
-| `-diff`              | Save this scan and print the diff vs. the previous run      |
-| `-timeout <dur>`     | Overall scan budget, e.g. `30m` (0 = config default)        |
-| `-quiet`             | Suppress per-node streaming output                          |
-| `-json / -md / -csv / -sarif / -html <path>` | Write a report in that format          |
-| `-obsidian <dir>`    | Export an Obsidian vault to the directory                   |
-| `-no-scope`          | Disable the active-probing scope guard (**dangerous**)      |
-
 ---
 
-## Configuration & API keys
+## Сборка
 
-Settings and API keys live in a JSON file under the XDG config directory:
+**Для запуска** ничего не нужно — достаточно самого бинарника (SQLite на
+чистом Go, словари и шаблоны внутри бинарника).
 
-```
-~/.config/osint-forge/config.json
-```
-
-Edit them from the GUI's settings panel, or directly on disk (written with
-`0600` permissions). **No keys are stored in this repository**, and a missing
-key simply disables the source that needs it — everything keyless still runs.
-
-| Setting                 | Unlocks / controls                                         |
-| ----------------------- | ---------------------------------------------------------- |
-| `shodan_key`            | Shodan passive host data                                   |
-| `censys_id` + `censys_secret` | Censys Search v2                                     |
-| `securitytrails_key`    | Reverse-IP / passive DNS                                   |
-| `virustotal_key`        | Reverse-IP / passive DNS                                   |
-| `github_token`          | GitHub code search (leaked-secret dorking)                 |
-| `hibp_key`              | Have I Been Pwned breach checks                            |
-| `nvd_key`               | Higher NVD rate limit (optional)                           |
-| `nmap_args`             | Extra nmap flags (default `-sV -T4 --top-ports 1000`)      |
-| `fuzz_enabled` / `fuzz_wordlist` | Content fuzzing + wordlist selection             |
-| `subdomain_bruteforce` / `zone_transfer` | DNS brute-force / AXFR toggles           |
-| `status_codes`          | Which HTTP status codes to record (`2xx,3xx,401,403,…`)    |
-| `nuclei` / `screenshots` | Enable nuclei / Chromium screenshots (when the binary is on PATH) |
-| `max_concurrent`        | Worker-pool size                                           |
-
----
-
-## Safety model
-
-- **Scope guard** (`scope_strict`, **on by default**) — active probes only hit
-  the target's registrable domain, its subdomains, and discovered IPs. The
-  unrelated hostnames that reverse-IP, shared hosting and certificate SANs
-  routinely surface are **never** actively scanned, because they belong to other
-  organizations. You can add extra in-scope domains/CIDRs via `extra_scope`.
-- **Consent gate** — the entire active-probing source set is excluded unless you
-  assert authorization (`consent` in the GUI, `-active` in the CLI).
-- **Scan budget** (`scan_timeout_min`) — a hard overall time limit; a scan can
-  never run unbounded.
-- **Polite rate limiting** (`rate_limit_per_host`) — caps requests/sec per host
-  for fuzzing and brute-forcing.
-- **Crash isolation** — a panic in any single source is recovered; the rest of
-  the scan continues.
-
----
-
-## Where your data lives
-
-Nothing you scan is written into the project directory. All runtime state goes
-to your user directories:
-
-| Data                       | Location                                      |
-| -------------------------- | --------------------------------------------- |
-| Settings & API keys        | `~/.config/osint-forge/config.json`           |
-| CVE cache (SQLite)         | `~/.cache/osint-forge/cve.sqlite`             |
-| Scan history / snapshots   | `~/.cache/osint-forge/history/<target>/`      |
-| Screenshots                | `~/.cache/osint-forge/…`                       |
-
-(Exact base paths follow your OS's XDG / cache conventions.)
-
----
-
-## Requirements
-
-**To run the prebuilt app or the CLI:** nothing — they're self-contained static
-binaries. SQLite is a pure-Go driver, and all wordlists are embedded.
-
-**To build the desktop GUI:**
-
-- [Go](https://go.dev) **1.26+**
-- The [Wails v2 CLI](https://wails.io) — `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
-- `webkit2gtk-4.1` development libraries (Linux)
-
-**Optional external tools** (auto-detected on `PATH`, each feature is skipped if
-its tool is missing):
-
-- `nmap` — richer service/version scanning
-- `nuclei` — template-based vulnerability checks
-- A Chromium-based browser — headless screenshots
-
----
-
-## Building
+**Для сборки:** [Go 1.26+](https://go.dev) и [Node.js](https://nodejs.org) + npm.
 
 ```sh
-make gui      # wails build -tags webkit2_41  → desktop app
-make run      # wails dev   -tags webkit2_41  → hot-reload dev mode
-make cli      # build/bin/reconcli            → headless CLI (no system deps)
-make test     # go test ./internal/...
-make vet      # go vet ./internal/... ./cmd/...
-make fmt      # gofmt
-make tidy     # go mod tidy
+make            # = make all: test + vet + build
+make frontend   # собрать Svelte UI в frontend/dist (встраивается в бинарник)
+make web        # frontend + build/bin/osint-forge → веб-сервер со встроенным UI
+make run        # собрать и запустить на http://127.0.0.1:8081
+make cli        # build/bin/reconcli → версия для командной строки
+make build      # cli + web
+make test       # go test ./...       (все пакеты, включая тесты веб-сервера)
+make race       # go test -race ./... (как в CI; нужен cgo)
+make vet        # go vet ./...
+make fmt        # go fmt ./...
+make tidy       # go mod tidy
+make clean      # удалить build/bin
 ```
 
-Or use the launcher: `./start.sh build`, `./start.sh dev`, `./start.sh run`.
+Или через `start.sh`: `./start.sh build`, `./start.sh dev`, `./start.sh run`.
+`./start.sh` (или `run`) **автоматически пересобирает** бинарник, если
+исходники Go/UI новее него — после изменения кода не запустится старая сборка.
+Если не найдены `go` или `npm`, выводится понятное сообщение.
+
+> Бинарник сервера включает `frontend/dist` через `go:embed`, поэтому фронтенд
+> должен быть собран **до** `go build .` (`make frontend`). Иначе появится
+> ошибка `pattern all:frontend/dist: no matching files found`. `make test` и
+> `make vet` сами собирают UI, если он ещё не собран. Для `reconcli` фронтенд не
+> нужен.
 
 ---
 
-## Project layout
+## Тесты
+
+```sh
+make test                        # go test ./...  — все пакеты, включая корневой
+make race                        # go test -race ./...  — с race detector
+cd frontend && npm run check     # проверка типов Svelte/TypeScript
+```
+
+`make test` запускает **все** пакеты, включая тесты веб-сервера и мониторинга в
+корневом пакете (`monitor_test.go`, `monitor_integration_test.go`) — раньше
+шаблон `./internal/...` молча их пропускал.
+
+Что покрывают тесты (основное): безопасность модели данных графа при
+параллельном чтении/записи, правила области (IP серверов MX/NS, редиректы,
+sitemap), аргументы nmap для IPv4/IPv6, калибровку soft-404, то, что ключи API и
+токены не попадают в тексты ошибок, одновременную работу двух процессов с
+SQLite, сохранение/дедупликацию/ограничение истории, сохранение мониторинга и
+игнорирование неполных сканирований, форматы отчётов (расположения в SARIF,
+отсутствие `<nil>`).
+
+**CI** (GitHub Actions, `.github/workflows/ci.yml`) на каждый push и pull
+request выполняет `go vet ./internal/... ./cmd/...`, `go test -race
+./internal/...` и сборку CLI. Поскольку пакет веб-сервера встраивает
+`frontend/dist`, чтобы проверять его в CI, рекомендуется добавить в workflow
+сборку фронтенда (`npm ci && npm run build`, `npm run check`) и шаги
+`go vet ./...` / `go test -race ./...`. Локально `make test` и `make race` уже
+это делают.
+
+---
+
+## Структура проекта
 
 ```
 osint-forge/
-├── app.go                 # Wails-bound backend API (methods callable from JS)
-├── main.go                # Wails app bootstrap
-├── start.sh               # cross-shell launcher (run / dev / build)
-├── cmd/reconcli/          # headless CLI over the same engine
+├── main.go                 # запуск веб-сервера (флаги, embed, :8081)
+├── api.go                  # HTTP-маршруты: JSON API, экспорт, SPA, защита от CSRF
+├── sse.go                  # хаб Server-Sent Events (живые обновления)
+├── app.go                  # бэкенд: управление сканированием, конфиг, набор источников
+├── app_history.go          # помощники истории/заметок
+├── app_screenshot.go       # скриншот по запросу (POST /api/screenshot)
+├── monitor.go              # планировщик непрерывного мониторинга (+ monitor.json)
+├── monitor_filter.go       # фильтр уведомлений мониторинга (пресеты, типы, серьёзность)
+├── start.sh                # скрипт запуска (run / dev / build)
+├── Makefile                # команды сборки и тестов
+├── .github/workflows/      # CI
+├── cmd/reconcli/           # CLI поверх того же движка
 ├── internal/
-│   ├── core/              # pipeline, stages, target parsing, scope guard
-│   ├── graph/             # concurrency-safe entity graph + Obsidian export
-│   ├── recon/             # passive OSINT sources
-│   ├── scan/              # active probing sources (+ embedded wordlists)
-│   ├── cve/               # NVD matching, SQLite cache, KEV + EPSS enrichment
-│   ├── report/            # JSON / HTML / Markdown / CSV / SARIF renderers
-│   └── history/           # per-target snapshots + diffing
-└── frontend/              # Svelte + Cytoscape.js UI
+│   ├── config/             # загрузка/сохранение настроек, значения по умолчанию
+│   ├── core/               # конвейер, этапы, collector, цель, область
+│   ├── graph/              # потокобезопасный граф + экспорт в Obsidian
+│   ├── recon/              # пассивные источники OSINT (+ словарь на 5000 поддоменов)
+│   ├── scan/               # активные источники (+ bidi.go: быстрые скриншоты через постоянный Firefox)
+│   │   ├── checks/         #   встроенные шаблоны (.json)
+│   │   └── wordlists/      #   словари SecLists для фаззинга
+│   ├── cve/                # сопоставление NVD, кэш SQLite, KEV + EPSS
+│   ├── history/            # сохранение сканирований, список, сравнение
+│   ├── notes/              # теги и заметки пентестера
+│   ├── notify/             # уведомления Telegram / вебхук
+│   └── report/             # генераторы HTML / MD / CSV / SARIF / JSON
+└── frontend/
+    └── src/
+        ├── App.svelte      # основная оболочка (SSE, ресинхронизация, виды)
+        ├── components/     # DetailPanel, TableView, Gallery, HistoryDrawer,
+        │                   # MonitorDrawer, SourcesDrawer, SettingsModal,
+        │                   # NotesEditor, NextStep, ShotPreview, Legend, Footer
+        └── lib/            # api.ts, graph.ts (Cytoscape), state, guidance, actions, models,
+                            # i18n.ts (русские названия этапов, типов, серьёзности),
+                            # layoutCore.ts + layout.worker.ts (fCoSE, кольца, разведение)
 ```
+
+### Добавление нового источника
+
+Каждый источник реализует интерфейс `core.Source`:
+
+```go
+type Source interface {
+    Name() string                                  // имя в панели и журнале
+    Stage() core.Stage                             // StageDiscovery … StagePost
+    Applicable(core.Target) bool                   // false, если нет ключа/настройки
+    Run(ctx context.Context, c *core.Collector) error
+}
+```
+
+Источник добавляет найденное в граф через `Collector`. Правила:
+
+- Активный источник обязан перед запросом к каждому хосту проверять область
+  через `c.InScope(host)`. Для HTTP-запросов оборачивайте контекст в
+  `withScope(ctx, c)` — тогда и редиректы не выйдут за пределы области.
+- Если вы разрешаете имя хоста через **живой** DNS, вызовите
+  `c.MarkResolved(host, ip)` — только тогда IP попадает в область активного
+  сканирования. Для исторических данных (пассивный DNS) не вызывайте его.
+- Для чтения узла используйте `c.GetNode`: он возвращает копию. Прямое чтение
+  живого узла графа приводит к гонке с другим источником.
+- В долгих циклах проверяйте `ctx.Err()` — через это работают «Остановить» и
+  лимит времени.
+- Сообщения журнала (`c.Log`) и тексты находок (`c.Finding`) пишите на русском.
+
+Новый источник добавьте в `buildSources` в `app.go` **и** в список в
+`cmd/reconcli/main.go` — если он пассивный, в общий список, если активный — в
+блок `consent` / `-active`.
 
 ---
 
-## License & disclaimer
+## Решение проблем
 
-Released under the [MIT License](LICENSE).
+| Симптом                                                | Причина и решение                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------------- |
+| `listen 127.0.0.1:8081: address already in use`        | Порт занят (вероятно, работает другой экземпляр). Остановите его или запустите с `-addr 127.0.0.1:8082`. |
+| `сканирование уже выполняется`                         | Одновременно — одно сканирование. Сначала остановите текущее (кнопка в интерфейсе или `POST /api/cancel`) и дождитесь окончания «Остановка…». |
+| `неверная цель: …`                                     | Неверный формат цели — см. [Форматы цели](#форматы-цели). |
+| Только пассивные результаты, нет портов/URL            | Не отмечено согласие или в CLI нет `-active`.                      |
+| Мало версий сервисов и CVE                             | `nmap` нет в PATH — работал сканер портов на Go (`GET /api/nmap` → `false`). Установите nmap. |
+| Сопоставление CVE идёт медленно                        | Нет ключа NVD — запросы замедляются под лимит. Добавьте `nvd_key`.  |
+| Нет скриншотов                                         | Chromium/Firefox не найден в PATH или `screenshots` выключен.       |
+| Скриншот с ошибкой «страница не открылась» / «не ответила» | Сайт закрыт, DNS не найден или он вообще не ответил за 15 секунд — это состояние сайта, а не браузера. |
+| Долго видно «🧭 Раскладка графа…» в нижней панели       | Граф из тысяч узлов раскладывается ~20–30 секунд. В это время с интерфейсом можно работать. |
+| Мониторинг: «есть изменения, но они не проходят фильтр» | Изменения не прошли фильтр наблюдения. При необходимости расширьте фильтр кнопкой ✏️ («Все изменения»). |
+| В панели появилась кнопка «Сделать скриншот», снимка нет | Сканирование не обращалось к этой странице (архив/sitemap/JS) или скриншоты выключены — снимок делается только по кнопке. |
+| Источник с ключом (Shodan, Censys…) не сработал        | При пустом ключе источник вообще не попадает в список. Проверьте ключ в ⚙ и состояние в панели «Источники». |
+| Некоторые хосты или IP не сканировались активно («N IP вне области») | Они вне области (`scope_strict`): серверы MX/NS, IP пассивного DNS, чужие домены. Если есть разрешение, добавьте их в `extra_scope`. |
+| Сканирование остановилось раньше времени               | Исчерпан лимит `scan_timeout_min`. Увеличьте значение или передайте `-timeout` в CLI. |
+| nmap работает долго                                    | `-sV` отправляет много запросов на каждый открытый порт. Сократите `nmap_args` в настройках (например, `-sV -T4 --top-ports 100` или `-p 80,443,8080`). |
+| В истории меньше сканирований, чем ожидалось           | Сканирование, идентичное предыдущему, заменяет старую копию; больше 200 на цель удаляются. |
+| Панель мониторинга: «сканирование не завершилось полностью» | Сканирование мониторинга было остановлено или не уложилось в лимит времени — оно не сохранено и не сравнивалось. Увеличьте `scan_timeout_min`. |
+| Панель мониторинга: «уведомление не отправлено: …»     | Telegram/вебхук отклонил запрос — причина в самом сообщении (например, «chat not found»). Проверьте токен/ID чата в ⚙ и нажмите «✈ Тестовое сообщение». |
+| `кросс-доменный запрос заблокирован` (403)             | К API обращаются с другого origin. Откройте интерфейс с адреса сервера или используйте клиент без `Origin`, например `curl`. |
+| `pattern all:frontend/dist: no matching files found`   | Фронтенд не собран — сначала `make frontend`.                       |
 
-**Disclaimer.** osint-forge is intended for authorized security assessment,
-research and education. Scanning or probing systems you do not own or have
-explicit permission to test may be illegal. The authors accept no liability for
-misuse. Always stay in scope, and keep active probing behind the consent gate.
+---
+
+## Известные ограничения и незавершённые работы
+
+**Ограничения:**
+
+- Авторизации (входа) нет — программа рассчитана только на локальное
+  использование.
+- Одновременно работает только одно сканирование; сканирования мониторинга
+  стоят в той же очереди.
+- Сканирование мониторинга заменяет граф на экране (отдельного «фонового» графа
+  нет).
+- «Остановить» отменяет текущие запросы, но некоторые сетевые операции, такие
+  как перенос зоны (AXFR), ждут окончания своего таймаута (≈10 с).
+
+**Начато в коде, но пока не завершено:**
+
+- **Проверки облачных бакетов** — в модели графа предусмотрены узел `bucket`
+  (S3/GCS/Azure) и «bucket checks» на этапе «Анализ», но пока ни один источник
+  такие узлы не создаёт.
+- **Режим проекта** — во внутренней структуре `ScanRequest` есть поля `project`
+  и `extraScope` на одно сканирование, но `POST /api/scan` пока принимает только
+  `target` и `consent`. Сейчас дополнительную область можно задать только через
+  общую настройку `extra_scope`.
+- **Режим CLI / DevOps** — `reconcli` создан как основа будущего полноценного
+  режима CLI/DevOps; пока он сканирует одну цель и пишет отчёт.
+
+---
+
+## Лицензия и ответственность
+
+Распространяется по [лицензии MIT](LICENSE).
+
+osint-forge предназначен для **авторизованного тестирования безопасности и
+обучения**. Используйте его только против систем, которые принадлежат вам или на
+проверку которых есть **письменное разрешение**. Сканирование без разрешения
+незаконно во многих юрисдикциях. Авторы программы не несут ответственности за
+последствия её неправильного использования.

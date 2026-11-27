@@ -45,6 +45,9 @@ func (s CensysSource) Run(ctx context.Context, c *core.Collector) error {
 	headers := map[string]string{"Authorization": auth}
 
 	for _, ip := range c.ListByType(graph.NodeIP) {
+		if !c.InScope(ip) || ctx.Err() != nil {
+			continue // target infrastructure only (see ShodanSource)
+		}
 		var h censysHost
 		endpoint := "https://search.censys.io/api/v2/hosts/" + ip
 		if err := getJSON(ctx, s.Cfg, endpoint, headers, &h); err != nil {
@@ -78,7 +81,7 @@ func (s CensysSource) Run(ctx context.Context, c *core.Collector) error {
 			}
 			addShodanPort(c, ipID, ip, svc.Port, proto, product, version, cpe)
 		}
-		c.Log(core.LogInfo, fmt.Sprintf("censys %s: %d services, %d names", ip, len(h.Result.Services), len(h.Result.DNS.Names)))
+		c.Log(core.LogInfo, fmt.Sprintf("censys %s: сервисов %d, имён %d", ip, len(h.Result.Services), len(h.Result.DNS.Names)))
 		c.Flush()
 	}
 	return nil

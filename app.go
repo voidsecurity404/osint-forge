@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -14,35 +12,64 @@ import (
 	"osint-forge/internal/graph"
 	"osint-forge/internal/history"
 	"osint-forge/internal/recon"
-	"osint-forge/internal/report"
 	"osint-forge/internal/scan"
-
-	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// Wails event channels consumed by the frontend.
+// SSE event names consumed by the frontend.
 const (
+	evtStart    = "scan:start" // a scan began (from any tab or the monitor): reset the view
 	evtDelta    = "scan:delta"
 	evtLog      = "scan:log"
 	evtProgress = "scan:progress"
+	evtTiming   = "scan:timing"
+	evtReset    = "graph:reset" // the server graph was replaced (history scan opened)
 )
 
-// App is the Wails-bound backend. Its exported methods are callable from JS.
+// ScanResult is handed to OnScanDone hooks once a scan has finished.
+type ScanResult struct {
+	Request  ScanRequest
+	Snapshot graph.Delta
+	// Diff is the change versus the previously stored scan of the target,
+	// computed BEFORE this scan was saved (Save may replace an identical scan).
+	Diff history.Diff
+	// Complete is false when the scan was cancelled or hit its time budget:
+	// its result is partial and must not be read as "things disappeared".
+	Complete bool
+}
+
+// App is the backend behind the HTTP API. Events are pushed to browsers over SSE.
 type App struct {
 	ctx context.Context
+	hub *Hub
 
 	mu       sync.Mutex
 	cfg      config.Config
 	g        *graph.Graph
 	cancel   context.CancelFunc
 	running  bool
+	target   string
 	cveStore *cve.Store
+	onDone   []func(ScanResult)
+	timings  []core.SourceTiming
+	monitor  *Monitor
+}
+
+// publish forwards an event to every connected browser (no-op without a hub).
+func (a *App) publish(event string, v any) {
+	if a.hub != nil {
+		a.hub.Publish(event, v)
+	}
 }
 
 // NewApp creates a new App application struct.
 func NewApp() *App {
 	cfg, _ := config.Load()
-	a := &App{cfg: cfg, g: graph.New()}
+	a := &App{cfg: cfg, g: graph.New(), hub: NewHub(), ctx: context.Background()}
+	// Reopen the most recent scan so a server restart doesn't lose the graph.
+	if label, d, ok := history.Latest(); ok {
+		a.g = graph.FromDelta(d)
+		a.target = label
+	}
 	if p, err := cve.DefaultPath(); err == nil {
 		if store, err := cve.Open(p); err == nil {
 			a.cveStore = store
@@ -51,13 +78,9 @@ func NewApp() *App {
 	return a
 }
 
-// startup is called when the app starts.
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
-}
-
 // shutdown is called when the app closes; it releases the CVE database.
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) shutdown() {
+	scan.ShutdownBrowsers() // the persistent screenshot browser
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cveStore != nil {
@@ -68,59 +91,132 @@ func (a *App) shutdown(ctx context.Context) {
 
 // --- Emitter implementation (core.Emitter + core.ProgressEmitter) ---
 
-func (a *App) EmitDelta(d graph.Delta)      { wruntime.EventsEmit(a.ctx, evtDelta, d) }
-func (a *App) EmitLog(l core.LogLine)       { wruntime.EventsEmit(a.ctx, evtLog, l) }
-func (a *App) EmitProgress(p core.Progress) { wruntime.EventsEmit(a.ctx, evtProgress, p) }
+func (a *App) EmitDelta(d graph.Delta)      { a.publish(evtDelta, d) }
+func (a *App) EmitLog(l core.LogLine)       { a.publish(evtLog, l) }
+func (a *App) EmitProgress(p core.Progress) { a.publish(evtProgress, p) }
+
+// EmitTiming records and broadcasts a per-source timing update.
+func (a *App) EmitTiming(t core.SourceTiming) {
+	a.mu.Lock()
+	replaced := false
+	for i := range a.timings {
+		if a.timings[i].Name == t.Name {
+			a.timings[i] = t
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		a.timings = append(a.timings, t)
+	}
+	a.mu.Unlock()
+	a.publish(evtTiming, t)
+}
+
+// Timings returns the per-source stats of the current/last scan.
+func (a *App) Timings() []core.SourceTiming {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]core.SourceTiming{}, a.timings...)
+}
 
 // --- Bound API ---
 
 // ParseTarget lets the UI preview how input will be interpreted.
 func (a *App) ParseTarget(raw string) core.Target { return core.ParseTarget(raw) }
 
+// ScanRequest describes one scan to run.
+type ScanRequest struct {
+	Target     string   `json:"target"`
+	Consent    bool     `json:"consent"`              // caller asserts authorization for active probing
+	ExtraScope []string `json:"extraScope,omitempty"` // added to the configured scope (project scope)
+	Project    string   `json:"project,omitempty"`    // project id that queued it, if any
+	Monitor    bool     `json:"-"`                    // true when queued by the scheduler
+}
+
 // StartScan begins a scan of the given target. consent must be true for the
 // active (nmap/http) stages — the caller is asserting authorization. It returns
 // an error if a scan is already running or input is invalid.
 func (a *App) StartScan(raw string, consent bool) error {
-	t := core.ParseTarget(raw)
-	if t.IP == "" && t.Domain == "" {
-		return errors.New("invalid target: enter an IP address or domain")
+	return a.startScan(ScanRequest{Target: raw, Consent: consent})
+}
+
+// labelOf is the history key of a target (domain, else IP).
+func labelOf(t core.Target) string {
+	if t.Domain != "" {
+		return t.Domain
+	}
+	return t.IP
+}
+
+func (a *App) startScan(req ScanRequest) error {
+	t := core.ParseTarget(req.Target)
+	if !t.Valid {
+		return errors.New("неверная цель: укажите корректный IP-адрес или домен (например, 1.1.1.1 или example.com)")
 	}
 
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
-		return errors.New("a scan is already running")
+		return errors.New("сканирование уже выполняется")
 	}
 	// Fresh graph per scan.
 	a.g = graph.New()
 	ctx, cancel := context.WithCancel(a.ctx)
 	// Enforce an overall scan budget so a scan can never run unbounded.
-	if cfg := a.cfg; cfg.ScanTimeoutMin > 0 {
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(cfg.ScanTimeoutMin)*time.Minute)
+	if a.cfg.ScanTimeoutMin > 0 {
+		var cancelTimeout context.CancelFunc
+		ctx, cancelTimeout = context.WithTimeout(ctx, time.Duration(a.cfg.ScanTimeoutMin)*time.Minute)
+		parent := cancel
+		cancel = func() { cancelTimeout(); parent() }
 	}
+	label := labelOf(t)
 	a.cancel = cancel
 	a.running = true
+	a.target = label // normalised: notes, exports and history all key on it
+	a.timings = nil
 	cfg := a.cfg
 	g := a.g
 	a.mu.Unlock()
 
-	sources := buildSources(cfg, consent, a.cveStore)
+	// Every open tab resets its graph — also for scans it did not start (the
+	// monitor, another tab). Published before the pipeline runs, so it always
+	// precedes this scan's deltas on each client's stream.
+	a.publish(evtStart, map[string]any{"target": label, "consent": req.Consent, "monitor": req.Monitor})
+
+	scope := append(append([]string{}, cfg.ExtraScope...), req.ExtraScope...)
+	sources := buildSources(cfg, req.Consent, a.cveStore)
 	pipe := core.NewPipeline(a, g, sources...)
-	pipe.SetScope(core.NewScope(t, cfg.ScopeStrict, cfg.ExtraScope))
+	pipe.SetScope(core.NewScope(t, cfg.ScopeStrict, scope))
 
 	go func() {
+		defer cancel()
 		pipe.Run(ctx, t)
-		// Persist this scan so a later run of the same target can be diffed.
-		label := t.Domain
-		if label == "" {
-			label = t.IP
+		res := ScanResult{Request: req, Snapshot: g.Snapshot(), Complete: ctx.Err() == nil}
+		// Diff first, then persist (Save may replace an identical last scan).
+		res.Diff, _ = history.DiffAgainstPrevious(label, res.Snapshot)
+		// A partial monitor run is not kept: the next run would report every
+		// entity it missed as "new".
+		if res.Complete || !req.Monitor {
+			_, _ = history.Save(label, res.Snapshot)
 		}
-		_, _ = history.Save(label, g.Snapshot())
 		a.mu.Lock()
 		a.running = false
+		a.cancel = nil
+		hooks := append([]func(ScanResult){}, a.onDone...)
 		a.mu.Unlock()
+		for _, h := range hooks {
+			h(res)
+		}
 	}()
 	return nil
+}
+
+// OnScanDone registers a callback run after every scan finishes and is saved.
+func (a *App) OnScanDone(f func(ScanResult)) {
+	a.mu.Lock()
+	a.onDone = append(a.onDone, f)
+	a.mu.Unlock()
 }
 
 // DiffPrevious compares the current graph to the most recent stored scan of the
@@ -160,20 +256,23 @@ func (a *App) GetConfig() config.Config {
 
 // SaveConfig persists and applies new configuration.
 func (a *App) SaveConfig(cfg config.Config) error {
-	if cfg.MaxConcurrent <= 0 {
-		cfg.MaxConcurrent = 16
-	}
+	cfg.Normalize()
 	a.mu.Lock()
 	a.cfg = cfg
 	a.mu.Unlock()
 	return config.Save(cfg)
 }
 
+// Status reports whether a scan is running and for which target, so a freshly
+// opened browser tab can re-sync with an in-progress scan.
+func (a *App) Status() (bool, string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.running, a.target
+}
+
 // NmapInstalled reports whether nmap is available (UI hint).
 func (a *App) NmapInstalled() bool { return scan.NmapAvailable() }
-
-// OpenURL opens a URL in the user's default browser (used for CVE/URL nodes).
-func (a *App) OpenURL(url string) { wruntime.BrowserOpenURL(a.ctx, url) }
 
 // FetchPage fetches a URL on demand so the detail panel can show its status,
 // headers and raw HTML ("view HTML").
@@ -184,126 +283,6 @@ func (a *App) FetchPage(url string) (scan.Page, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
 	defer cancel()
 	return scan.FetchPage(ctx, ua, url)
-}
-
-// ExportObsidian asks for a folder and writes the current graph there as an
-// Obsidian vault (one cross-linked note per node). It returns a status message.
-func (a *App) ExportObsidian() (string, error) {
-	dir, err := wruntime.OpenDirectoryDialog(a.ctx, wruntime.OpenDialogOptions{
-		Title: "Obsidian vault papkasini tanlang",
-	})
-	if err != nil {
-		return "", err
-	}
-	if dir == "" {
-		return "", nil // user cancelled
-	}
-	a.mu.Lock()
-	g := a.g
-	a.mu.Unlock()
-	n, err := g.ExportVault(dir)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%d ta nota yozildi: %s", n, dir), nil
-}
-
-// ExportJSON saves the current graph as a JSON file.
-func (a *App) ExportJSON() (string, error) {
-	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title: "JSON hisobotni saqlash", DefaultFilename: "osint-forge-report.json",
-	})
-	if err != nil || path == "" {
-		return "", err
-	}
-	a.mu.Lock()
-	g := a.g
-	a.mu.Unlock()
-	data, err := report.JSON(g.Snapshot())
-	if err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", err
-	}
-	return "JSON saqlandi: " + path, nil
-}
-
-// ExportHTML saves a standalone HTML report of the current graph.
-func (a *App) ExportHTML(target string) (string, error) {
-	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title: "HTML hisobotni saqlash", DefaultFilename: "osint-forge-report.html",
-	})
-	if err != nil || path == "" {
-		return "", err
-	}
-	a.mu.Lock()
-	g := a.g
-	a.mu.Unlock()
-	data := report.HTML(g.Snapshot(), target)
-	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
-		return "", err
-	}
-	return "HTML saqlandi: " + path, nil
-}
-
-// ExportMarkdown saves a Markdown report of the current graph.
-func (a *App) ExportMarkdown(target string) (string, error) {
-	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title: "Markdown hisobotni saqlash", DefaultFilename: "osint-forge-report.md",
-	})
-	if err != nil || path == "" {
-		return "", err
-	}
-	a.mu.Lock()
-	g := a.g
-	a.mu.Unlock()
-	if err := os.WriteFile(path, []byte(report.Markdown(g.Snapshot(), target)), 0o644); err != nil {
-		return "", err
-	}
-	return "Markdown saqlandi: " + path, nil
-}
-
-// ExportCSV saves a findings+CVE CSV of the current graph.
-func (a *App) ExportCSV() (string, error) {
-	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title: "CSV hisobotni saqlash", DefaultFilename: "osint-forge-report.csv",
-	})
-	if err != nil || path == "" {
-		return "", err
-	}
-	a.mu.Lock()
-	g := a.g
-	a.mu.Unlock()
-	data, err := report.CSV(g.Snapshot())
-	if err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", err
-	}
-	return "CSV saqlandi: " + path, nil
-}
-
-// ExportSARIF saves a SARIF 2.1.0 report (for CI / code-scanning dashboards).
-func (a *App) ExportSARIF(target string) (string, error) {
-	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
-		Title: "SARIF hisobotni saqlash", DefaultFilename: "osint-forge-report.sarif",
-	})
-	if err != nil || path == "" {
-		return "", err
-	}
-	a.mu.Lock()
-	g := a.g
-	a.mu.Unlock()
-	data, err := report.SARIF(g.Snapshot(), target)
-	if err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", err
-	}
-	return "SARIF saqlandi: " + path, nil
 }
 
 // buildSources assembles the source set. Active probing (nmap, portscan, http)
@@ -323,19 +302,23 @@ func buildSources(cfg config.Config, consent bool, store *cve.Store) []core.Sour
 		recon.ShodanSource{Cfg: cfg},
 		recon.CensysSource{Cfg: cfg},
 		recon.GitHubSource{Cfg: cfg},
+		scan.ParamSource{Cfg: cfg},
 	}
 	if consent {
 		sources = append(sources,
 			scan.NmapSource{Cfg: cfg},
 			scan.PortScanSource{Cfg: cfg},
 			scan.HTTPSource{Cfg: cfg},
+			scan.WebPortsSource{Cfg: cfg},
 			scan.RobotsSource{Cfg: cfg},
 			scan.FuzzSource{Cfg: cfg},
 			scan.TLSSource{Cfg: cfg},
 			scan.WebChecksSource{Cfg: cfg},
 			scan.TakeoverSource{Cfg: cfg},
-			scan.NucleiSource{Cfg: cfg},
+			scan.BuiltinChecksSource{Cfg: cfg},
+			scan.NucleiSource{Cfg: cfg}, // optional: only if external nuclei is installed
 			scan.ScreenshotSource{Cfg: cfg},
+			scan.JSAnalyzeSource{Cfg: cfg},
 			recon.AXFRSource{Cfg: cfg},
 			recon.HIBPSource{Cfg: cfg}, // reads emails harvested by the http probe
 		)
